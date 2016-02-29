@@ -49,15 +49,13 @@ func (adaptor *dbAdaptor) Ping() error {
 }
 
 func (adaptor *dbAdaptor) Prepare(query string) (Stmt, error) {
-	return nil, errors.New("dbAdaptor.Prepare() is not implemented.")
+	sStmt, err := adaptor.sqlDb.Prepare(query)
+	return &stmtAdaptor{sqlStmt: sStmt}, err
 }
 
 func (adaptor *dbAdaptor) Query(query string, args ...interface{}) (Rows, error) {
 	res, err := adaptor.sqlDb.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
+	return res, err
 }
 
 func (adaptor *dbAdaptor) QueryRow(query string, args ...interface{}) Row {

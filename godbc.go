@@ -21,3 +21,11 @@ func Drivers() []string {
 func Register(name string, driver driver.Driver) {
 	sql.Register(name, driver)
 }
+
+func Open(driverName, dataSourceName string) (DB, error) {
+	db, err := sql.Open(driverName, dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	return &dbAdaptor{sqlDb: db}, nil
+}

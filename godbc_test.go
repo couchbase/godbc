@@ -100,6 +100,82 @@ func TestSimpleFieldValues(t *testing.T) {
 	}
 }
 
+/* This test should work, but it doesn't. The driver is unable to parse the result
+func TestCount(t *testing.T) {
+	db, err := Open("n1ql", "http://localhost:8093")
+	if err != nil {
+		t.Error("Failed to open.", err.Error())
+	}
+
+	rows, err := db.Query("select count(*) as c from `beer-sample` where type = 'beer' and style = 'American-Style Lager' and abv = 5.0")
+	if err != nil {
+		t.Error("Failed to query.", err.Error())
+	}
+	rows.Next();
+	var c float64
+	err = rows.Scan(&c)
+	if err != nil {
+		t.Error("Failed to scan first result.", err.Error())
+	}
+	if c != 38.0 {
+		t.Errorf("Wrong result on first query. Expected 38, got %v.", c)
+	}
+}
+*/
+
+func TestPrepare(t *testing.T) {
+	db, err := Open("n1ql", "http://localhost:8093")
+	if err != nil {
+		t.Error("Failed to open.", err.Error())
+	}
+
+	// Prepare
+	stmt, err := db.Prepare("select abv, name from `beer-sample` where type = 'beer' and style = ? and abv > ? order by name")
+	if err != nil {
+		t.Error("Failed to prepare.", err.Error())
+	}
+
+	// First query.
+	rows, err := stmt.Query("American-Style Lager", 5.0)
+	if err != nil {
+		t.Error("Failed to query.", err.Error())
+	}
+	rows.Next()
+	var abv float64
+	var name string
+	expectedAbv := 5.5
+	expectedName := "\"Amber Weizen\"" // Another case of strings being left with extraneous quotes.
+	err = rows.Scan(&abv, &name)
+	if err != nil {
+		t.Error("Failed to scan first result.", err.Error())
+	}
+	if name != expectedName {
+		t.Errorf("Wrong name on first query. Expected %v, got %v.", expectedName, name)
+	}
+	if abv != expectedAbv {
+		t.Errorf("Wrong abv on first query. Expected %v, got %v.", expectedAbv, abv)
+	}
+
+	// Second query.
+	rows, err = stmt.Query("Porter", 6.0)
+	if err != nil {
+		t.Error("Failed to query.", err.Error())
+	}
+	rows.Next()
+	expectedAbv = 6.8
+	expectedName = "\"(512) Pecan Porter\"" // Another case of strings being left with extraneous quotes.
+	err = rows.Scan(&abv, &name)
+	if err != nil {
+		t.Error("Failed to scan second result.", err.Error())
+	}
+	if name != expectedName {
+		t.Errorf("Wrong name on second query. Expected %v, got %v.", expectedName, name)
+	}
+	if abv != expectedAbv {
+		t.Errorf("Wrong abv on second query. Expected %v, got %v.", expectedAbv, abv)
+	}
+}
+
 func TestComplex(t *testing.T) {
 	db, err := Open("n1ql", "http://localhost:8093")
 	if err != nil {
