@@ -37,11 +37,7 @@ func (adaptor *dbAdaptor) Exec(query string, args ...interface{}) (Result, error
 	if err != nil {
 		return nil, err
 	}
-	rres, ok := res.(Result)
-	if !ok {
-		return nil, errors.New("Results are not compatible with godbc.Result interface.")
-	}
-	return rres, nil
+	return &resultAdaptor{sqlResult: res}, nil
 }
 
 func (adaptor *dbAdaptor) Ping() error {

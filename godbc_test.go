@@ -2,6 +2,7 @@ package godbc
 
 import (
 	"testing"
+	"time"
 )
 
 func TestPing(t *testing.T) {
@@ -122,6 +123,51 @@ func TestCount(t *testing.T) {
 	}
 }
 */
+
+func TestExec(t *testing.T) {
+	db, err := Open("n1ql", "http://localhost:8093")
+	if err != nil {
+		t.Error("Failed to open.", err.Error())
+	}
+
+	// Simple insert.
+	_, err = db.Exec("insert into default(key,value) values('123', {'a': 345, 'b': 'foo', 'c': true, 'type': 'godbc-test'})")
+	if err != nil {
+		t.Error("Unable to insert.", err.Error())
+	}
+
+	// Prepared insert.
+	stmt, err := db.Prepare("insert into default(key, value) values(?, {'a':?, 'b':?, 'c':?, 'type':'godbc-test'})")
+	_, err = stmt.Exec("124", 975, "bar", false)
+	if err != nil {
+		t.Error("Unable to exec prepared insert.", err.Error)
+	}
+
+	// Insert complex elements.
+	//
+	// Known problem: Should be able to pass maps and slices as parameters to
+	// queries and statements. Like these:
+	//
+	// mapVal := map[string]string{ "a": "b", "c": "d"}
+	// sliceVal := []float64{ 1.0, 2.0, 3.0 }
+	_, err = stmt.Exec("125", "baz", "{ 'a': 'b', 'c': 'd' }", "[1, 2, 3")
+	if err != nil {
+		t.Error("Unable to exec prepared insert.", err.Error())
+	}
+
+	time.Sleep(5 * time.Second)
+	result, err := db.Exec("delete from default where type = 'godbc-test'")
+	if err != nil {
+		t.Error("Unable to delete.", err.Error())
+	}
+	numDel, err := result.RowsAffected()
+	if err != nil {
+		t.Error("Unable to get rows affected.", err.Error())
+	}
+	if numDel != 3 {
+		t.Errorf("Expected 3 rows. Deleted %v.", numDel)
+	}
+}
 
 func TestPrepare(t *testing.T) {
 	db, err := Open("n1ql", "http://localhost:8093")
