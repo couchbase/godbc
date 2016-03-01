@@ -131,7 +131,7 @@ func (rows *n1qlRows) Scan(dest ...interface{}) error {
 		return fmt.Errorf("Scan() asked for %d values, but only %d are available.", len(dest), len(rows.curValues))
 	}
 	for i, d := range dest {
-		curVal := rows.curValues[i] 
+		curVal := rows.curValues[i]
 		switch ptr := d.(type) {
 		case *float64:
 			v, ok := curVal.(float64)
@@ -159,7 +159,7 @@ func (rows *n1qlRows) Scan(dest ...interface{}) error {
 		default:
 			return fmt.Errorf("Unsupported destination type at parameter %d of Scan().", i)
 		}
-		
+
 	}
 	return nil
 }

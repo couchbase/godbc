@@ -63,12 +63,12 @@ func (db *n1qlDB) QueryRow(query string, args ...interface{}) Row {
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil
-	}	
+	}
 	hasFirst := rows.Next()
 	if !hasFirst {
 		return nil
 	}
-	return rows  // Row is a subset of Rows.
+	return rows // Row is a subset of Rows.
 }
 
 func (db *n1qlDB) SetMaxIdleConns(n int) {
@@ -79,6 +79,6 @@ func (db *n1qlDB) SetMaxOpenConns(n int) {
 	// Do nothing. We don't keep track of connections.
 }
 
-func (db * n1qlDB) Stats() DBStats {
+func (db *n1qlDB) Stats() DBStats {
 	return nil
 }

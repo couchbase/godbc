@@ -570,7 +570,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (Resu
 
 // Execer implementation. To be used for queries that do not return any rows
 // such as Create Index, Insert, Upset, Delete etc
-func (conn *n1qlConn) Exec(query string, args...interface{}) (Result, error) {
+func (conn *n1qlConn) Exec(query string, args ...interface{}) (Result, error) {
 
 	if len(args) > 0 {
 		var argCount int
@@ -756,12 +756,12 @@ func (stmt *n1qlStmt) QueryRow(args ...interface{}) Row {
 	rows, err := stmt.Query(args...)
 	if err != nil {
 		return nil
-	}	
+	}
 	hasFirst := rows.Next()
 	if !hasFirst {
 		return nil
 	}
-	return rows  // Row is a subset of Rows.
+	return rows // Row is a subset of Rows.
 }
 
 func (stmt *n1qlStmt) Exec(args ...interface{}) (Result, error) {

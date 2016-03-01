@@ -14,7 +14,7 @@ func Open(dataSourceName string) (DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &n1qlDB{ conn: n1qlConn }, nil
+	return &n1qlDB{conn: n1qlConn}, nil
 }
 
 // func OpenExtended(dataSourceName string) (N1qlDB, error)
