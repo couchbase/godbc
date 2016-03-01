@@ -7,7 +7,7 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package godbc
+package n1ql
 
 import (
 	"encoding/json"
@@ -18,6 +18,7 @@ import (
 	"sort"
 )
 
+// Implements godbc.Rows.
 type n1qlRows struct {
 	resp        *http.Response
 	results     io.Reader

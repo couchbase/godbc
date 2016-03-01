@@ -1,8 +1,10 @@
-package godbc
+package n1ql
 
 import (
 	"testing"
 	"time"
+
+	"github.com/couchbaselabs/godbc"
 )
 
 func TestPing(t *testing.T) {
@@ -40,7 +42,7 @@ func TestQuery(t *testing.T) {
 	}
 }
 
-func checkSimpleFields(rows Rows, abvExp float64, nameExp string, isTwentyExp bool, t *testing.T) {
+func checkSimpleFields(rows godbc.Rows, abvExp float64, nameExp string, isTwentyExp bool, t *testing.T) {
 	hasNext := rows.Next()
 	if !hasNext {
 		t.Error("Unexpected end of rows")

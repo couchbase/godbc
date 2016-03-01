@@ -7,7 +7,7 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package godbc
+package n1ql
 
 import (
 	"bytes"
@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/couchbase/go-couchbase"
+	"github.com/couchbaselabs/godbc"
 )
 
 // Common error codes
@@ -343,7 +344,7 @@ func serializeErrors(errors interface{}) string {
 	return fmt.Sprintf(" Error %v %T", errors, errors)
 }
 
-func (conn *n1qlConn) Prepare(query string) (Stmt, error) {
+func (conn *n1qlConn) Prepare(query string) (godbc.Stmt, error) {
 	var argCount int
 
 	query = "PREPARE " + query
@@ -431,7 +432,7 @@ func decodeSignature(signature *json.RawMessage) interface{} {
 	return rows
 }
 
-func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (Rows, error) {
+func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (godbc.Rows, error) {
 
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
@@ -508,7 +509,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (Row
 
 // Executes a query that returns a set of Rows.
 // Select statements should use this interface
-func (conn *n1qlConn) Query(query string, args ...interface{}) (Rows, error) {
+func (conn *n1qlConn) Query(query string, args ...interface{}) (godbc.Rows, error) {
 
 	if len(args) > 0 {
 		var argCount int
@@ -522,7 +523,7 @@ func (conn *n1qlConn) Query(query string, args ...interface{}) (Rows, error) {
 	return conn.performQuery(query, nil)
 }
 
-func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (Result, error) {
+func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (godbc.Result, error) {
 
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
@@ -570,7 +571,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (Resu
 
 // Execer implementation. To be used for queries that do not return any rows
 // such as Create Index, Insert, Upset, Delete etc
-func (conn *n1qlConn) Exec(query string, args ...interface{}) (Result, error) {
+func (conn *n1qlConn) Exec(query string, args ...interface{}) (godbc.Result, error) {
 
 	if len(args) > 0 {
 		var argCount int
@@ -731,7 +732,7 @@ func (stmt *n1qlStmt) prepareRequest(args []interface{}) (*url.Values, error) {
 	return &postData, nil
 }
 
-func (stmt *n1qlStmt) Query(args ...interface{}) (Rows, error) {
+func (stmt *n1qlStmt) Query(args ...interface{}) (godbc.Rows, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
@@ -752,7 +753,7 @@ retry:
 	return rows, err
 }
 
-func (stmt *n1qlStmt) QueryRow(args ...interface{}) Row {
+func (stmt *n1qlStmt) QueryRow(args ...interface{}) godbc.Row {
 	rows, err := stmt.Query(args...)
 	if err != nil {
 		return nil
@@ -764,7 +765,7 @@ func (stmt *n1qlStmt) QueryRow(args ...interface{}) Row {
 	return rows // Row is a subset of Rows.
 }
 
-func (stmt *n1qlStmt) Exec(args ...interface{}) (Result, error) {
+func (stmt *n1qlStmt) Exec(args ...interface{}) (godbc.Result, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}

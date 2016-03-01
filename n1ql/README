@@ -1,0 +1,5 @@
+The tests in this package assume that Couchbase is installed and running on the local machine, with the
+query service available at the standard 8093 port. 
+
+The beer-sample sample bucket should be present, with a primary index built.
+The default bucket should also be available, with a primary index built.

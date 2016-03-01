@@ -7,15 +7,20 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package godbc
+package n1ql
 
-import "errors"
+import (
+	"errors"
 
+	"github.com/couchbaselabs/godbc"
+)
+
+// Implements godbc.DB interface.
 type n1qlDB struct {
 	conn *n1qlConn
 }
 
-func (db *n1qlDB) Begin() (Tx, error) {
+func (db *n1qlDB) Begin() (godbc.Tx, error) {
 	return nil, errors.New("Transactions are not supported.")
 }
 
@@ -31,7 +36,7 @@ func (db *n1qlDB) Close() error {
 	return nil
 }
 
-func (db *n1qlDB) Exec(query string, args ...interface{}) (Result, error) {
+func (db *n1qlDB) Exec(query string, args ...interface{}) (godbc.Result, error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		return nil, err
@@ -44,14 +49,14 @@ func (db *n1qlDB) Ping() error {
 	return error
 }
 
-func (db *n1qlDB) Prepare(query string) (Stmt, error) {
+func (db *n1qlDB) Prepare(query string) (godbc.Stmt, error) {
 	if db.conn == nil {
 		return nil, errors.New("N1QL connection is closed.")
 	}
 	return db.conn.Prepare(query)
 }
 
-func (db *n1qlDB) Query(query string, args ...interface{}) (Rows, error) {
+func (db *n1qlDB) Query(query string, args ...interface{}) (godbc.Rows, error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		return nil, err
@@ -59,7 +64,7 @@ func (db *n1qlDB) Query(query string, args ...interface{}) (Rows, error) {
 	return stmt.Query(args...)
 }
 
-func (db *n1qlDB) QueryRow(query string, args ...interface{}) Row {
+func (db *n1qlDB) QueryRow(query string, args ...interface{}) godbc.Row {
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil
@@ -79,6 +84,6 @@ func (db *n1qlDB) SetMaxOpenConns(n int) {
 	// Do nothing. We don't keep track of connections.
 }
 
-func (db *n1qlDB) Stats() DBStats {
+func (db *n1qlDB) Stats() godbc.DBStats {
 	return nil
 }

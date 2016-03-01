@@ -1,4 +1,4 @@
-//  Copyright (c) 2014 Couchbase, Inc.
+//  Copieright (c) 2016 Couchbase, Inc.
 //  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
 //  except in compliance with the License. You may obtain a copy of the License at
 //    http://www.apache.org/licenses/LICENSE-2.0
@@ -7,22 +7,16 @@
 //  either express or implied. See the License for the specific language governing permissions
 //  and limitations under the License.
 
-package godbc
+package n1ql
 
-// Implements sql.Result and godbc.Result interfaces.
-type n1qlResult struct {
-	affectedRows int64
-	insertId     int64
+import "github.com/couchbaselabs/godbc"
+
+func Open(dataSourceName string) (godbc.DB, error) {
+	n1qlConn, err := OpenN1QLConnection(dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	return &n1qlDB{conn: n1qlConn}, nil
 }
 
-func (res *n1qlResult) LastInsertId() (int64, error) {
-	return res.insertId, nil
-}
-
-func (res *n1qlResult) RowsAffected() (int64, error) {
-	return res.affectedRows, nil
-}
-
-func (res *n1qlResult) Rows() Rows {
-	return nil
-}
+// func OpenExtended(dataSourceName string) (N1qlDB, error)
