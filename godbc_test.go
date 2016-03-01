@@ -6,7 +6,7 @@ import (
 )
 
 func TestPing(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}
@@ -19,7 +19,7 @@ func TestPing(t *testing.T) {
 }
 
 func TestQuery(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}
@@ -52,21 +52,21 @@ func checkSimpleFields(rows Rows, abvExp float64, nameExp string, isTwentyExp bo
 	var is_twenty bool
 	err := rows.Scan(&abv, &is_twenty, &name)
 	if err != nil {
-		t.Error("Scan failed.", err)
+		t.Error("Scan failed.", err.Error())
 	}
 	if abv != abvExp {
-		t.Error("Expected abv %v, got %v.", abvExp, abv)
+		t.Errorf("Expected abv %v, got %v.", abvExp, abv)
 	}
 	if name != nameExp {
-		t.Error("Expected name %v, got %v.", nameExp, name)
+		t.Errorf("Expected name %v, got %v.", nameExp, name)
 	}
 	if is_twenty != isTwentyExp {
-		t.Error("Expected is_twenty %v, got %v.", isTwentyExp, is_twenty)
+		t.Errorf("Expected is_twenty %v, got %v.", isTwentyExp, is_twenty)
 	}
 }
 
 func TestSimpleFieldValues(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}
@@ -84,16 +84,13 @@ func TestSimpleFieldValues(t *testing.T) {
 	var expectedCols = []string{"abv", "is_twenty", "name"}
 	if len(cols) != 3 || cols[0] != expectedCols[0] || cols[1] != expectedCols[1] ||
 		cols[2] != expectedCols[2] {
-		t.Errorf("Expected columns %s, got %s.", expectedCols, cols)
+		t.Errorf("Expected columns %v, got %v.", expectedCols, cols)
 	}
 
-	//
-	// Known issue: string fields appear with quotes around them.
-	//
-	checkSimpleFields(rows, 7.0, "\"Baltika 6\"", true, t)
-	checkSimpleFields(rows, 4.8, "\"Estrella Levante Clasica\"", false, t)
-	checkSimpleFields(rows, 5.4, "\"Estrella Levante Especial\"", false, t)
-	checkSimpleFields(rows, 1.0, "\"Estrella Levante Sin 0.0% Alcohol\"", false, t)
+	checkSimpleFields(rows, 7.0, "Baltika 6", true, t)
+	checkSimpleFields(rows, 4.8, "Estrella Levante Clasica", false, t)
+	checkSimpleFields(rows, 5.4, "Estrella Levante Especial", false, t)
+	checkSimpleFields(rows, 1.0, "Estrella Levante Sin 0.0% Alcohol", false, t)
 
 	hasMore := rows.Next()
 	if hasMore {
@@ -103,7 +100,7 @@ func TestSimpleFieldValues(t *testing.T) {
 
 /* This test should work, but it doesn't. The driver is unable to parse the result
 func TestCount(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}
@@ -125,7 +122,7 @@ func TestCount(t *testing.T) {
 */
 
 func TestExec(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}
@@ -170,7 +167,7 @@ func TestExec(t *testing.T) {
 }
 
 func TestPrepare(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}
@@ -190,7 +187,7 @@ func TestPrepare(t *testing.T) {
 	var abv float64
 	var name string
 	expectedAbv := 5.5
-	expectedName := "\"Amber Weizen\"" // Another case of strings being left with extraneous quotes.
+	expectedName := "Amber Weizen"
 	err = rows.Scan(&abv, &name)
 	if err != nil {
 		t.Error("Failed to scan first result.", err.Error())
@@ -209,7 +206,7 @@ func TestPrepare(t *testing.T) {
 	}
 	rows.Next()
 	expectedAbv = 6.8
-	expectedName = "\"(512) Pecan Porter\"" // Another case of strings being left with extraneous quotes.
+	expectedName = "(512) Pecan Porter"
 	err = rows.Scan(&abv, &name)
 	if err != nil {
 		t.Error("Failed to scan second result.", err.Error())
@@ -223,7 +220,7 @@ func TestPrepare(t *testing.T) {
 }
 
 func TestComplex(t *testing.T) {
-	db, err := Open("n1ql", "http://localhost:8093")
+	db, err := Open("http://localhost:8093")
 	if err != nil {
 		t.Error("Failed to open.", err.Error())
 	}

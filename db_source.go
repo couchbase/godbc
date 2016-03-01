@@ -9,23 +9,6 @@
 
 package godbc
 
-import (
-	"database/sql"
-	"database/sql/driver"
-)
-
-func Drivers() []string {
-	return sql.Drivers()
-}
-
-func Register(name string, driver driver.Driver) {
-	sql.Register(name, driver)
-}
-
-func Open(driverName, dataSourceName string) (DB, error) {
-	db, err := sql.Open(driverName, dataSourceName)
-	if err != nil {
-		return nil, err
-	}
-	return &dbAdaptor{sqlDb: db}, nil
+type DbSource interface {
+	Open(dataSourceName string) (DB, error)
 }

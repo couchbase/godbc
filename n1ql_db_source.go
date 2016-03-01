@@ -9,15 +9,12 @@
 
 package godbc
 
-type DB interface {
-	Begin() (Tx, error)
-	Close() error
-	Exec(query string, args ...interface{}) (Result, error)
-	Ping() error
-	Prepare(query string) (Stmt, error)
-	Query(query string, args ...interface{}) (Rows, error)
-	QueryRow(query string, args ...interface{}) Row
-	SetMaxIdleConns(n int)
-	SetMaxOpenConns(n int)
-	Stats() DBStats
+func Open(dataSourceName string) (DB, error) {
+	n1qlConn, err := OpenN1QLConnection(dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	return &n1qlDB{ conn: n1qlConn }, nil
 }
+
+// func OpenExtended(dataSourceName string) (N1qlDB, error)

@@ -10,8 +10,8 @@
 package godbc
 
 import (
-	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +31,8 @@ type n1qlRows struct {
 	passthrough bool
 	columns     []string
 	rowsSent    int
+	curValues   []interface{}
+	iterError   error
 }
 
 func resultToRows(results io.Reader, resp *http.Response, signature interface{}, metrics, errors, extraVals interface{}) (*n1qlRows, error) {
@@ -90,7 +92,9 @@ func (rows *n1qlRows) populateRows() {
 
 }
 
-func (rows *n1qlRows) Columns() []string {
+func (rows *n1qlRows) Columns() ([]string, error) {
+	// TODO: This should be computed once, and stored, particularly since it is used by every
+	// call to Next().
 
 	var columns = make([]string, 0)
 
@@ -107,7 +111,7 @@ func (rows *n1qlRows) Columns() []string {
 
 	sort.Strings(columns)
 	rows.columns = columns
-	return columns
+	return columns, nil
 }
 
 func (rows *n1qlRows) Close() error {
@@ -115,22 +119,67 @@ func (rows *n1qlRows) Close() error {
 	return nil
 }
 
-func (rows *n1qlRows) Next(dest []driver.Value) error {
+func (rows *n1qlRows) Err() error {
+	return rows.iterError
+}
+
+func (rows *n1qlRows) Scan(dest ...interface{}) error {
+	if rows.curValues == nil {
+		return errors.New("No current row.")
+	}
+	if len(dest) > len(rows.curValues) {
+		return fmt.Errorf("Scan() asked for %d values, but only %d are available.", len(dest), len(rows.curValues))
+	}
+	for i, d := range dest {
+		curVal := rows.curValues[i] 
+		switch ptr := d.(type) {
+		case *float64:
+			v, ok := curVal.(float64)
+			if !ok {
+				return fmt.Errorf("Cannot assign to *float64 at index %d of Scan() from value %v.", i, curVal)
+			}
+			*ptr = v
+		case *string:
+			v, ok := curVal.(string)
+			if ok {
+				*ptr = v
+			} else {
+				bytes, err := json.Marshal(curVal)
+				if err != nil {
+					return err
+				}
+				*ptr = string(bytes)
+			}
+		case *bool:
+			v, ok := curVal.(bool)
+			if !ok {
+				return fmt.Errorf("Cannot assign to *bool at index %d of Scan() from value %v.", i, curVal)
+			}
+			*ptr = v
+		default:
+			return fmt.Errorf("Unsupported destination type at parameter %d of Scan().", i)
+		}
+		
+	}
+	return nil
+}
+
+func (rows *n1qlRows) Next() bool {
 	select {
 	case r, ok := <-rows.resultChan:
 		if ok {
-			numColumns := len(rows.Columns())
+			cols, _ := rows.Columns()
+			numColumns := len(cols)
+			dest := make([]interface{}, numColumns)
 
 			if numColumns == 1 {
-				bytes, _ := json.Marshal(r)
-				dest[0] = bytes
+				dest[0] = r
 			} else if rows.passthrough == true && rows.rowsSent < 2 {
 				// first two rows in passthrough mode are status and metrics
 				// in passthrough mode if the query being executed has multiple projections
 				// then it is highly likely that the number of columns of the metrics/status
 				// will not match the number of columns, therefore the following hack
-				bytes, _ := json.Marshal(r)
-				dest[0] = bytes
+				dest[0] = r
 				for i := 1; i < numColumns; i++ {
 					dest[i] = ""
 				}
@@ -138,14 +187,13 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 				switch resultRow := r.(type) {
 				case map[string]interface{}:
 					if len(resultRow) > numColumns {
-						return fmt.Errorf("N1QL: More Colums than expected %d != %d r %v", len(resultRow), numColumns, r)
+						rows.iterError = fmt.Errorf("N1QL: More Colums than expected %d != %d r %v", len(resultRow), numColumns, r)
+						return false
 					}
 					i := 0
 					for _, colName := range rows.columns {
 						if value, exists := resultRow[colName]; exists == true {
-							bytes, _ := json.Marshal(value)
-							dest[i] = bytes
-
+							dest[i] = value
 						} else {
 							dest[i] = ""
 						}
@@ -154,19 +202,21 @@ func (rows *n1qlRows) Next(dest []driver.Value) error {
 				case []interface{}:
 					i := 0
 					for _, value := range resultRow {
-						bytes, _ := json.Marshal(value)
-						dest[i] = bytes
+						dest[i] = value
 						i++
 					}
 
 				}
 			}
 			rows.rowsSent++
-			return nil
+			rows.curValues = dest
+			return true
 		} else {
-			return io.EOF
+			rows.curValues = nil
+			return false
 		}
 	case e := <-rows.errChan:
-		return e
+		rows.iterError = e
+		return false
 	}
 }

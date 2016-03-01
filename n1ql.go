@@ -87,18 +87,6 @@ func SetUsernamePassword(u, p string) {
 	password = p
 }
 
-// implements Driver interface
-type n1qlDrv struct{}
-
-func init() {
-	Register("n1ql", &n1qlDrv{})
-	QueryParams = make(map[string]string)
-}
-
-func (n *n1qlDrv) Open(name string) (driver.Conn, error) {
-	return OpenN1QLConnection(name)
-}
-
 // implements driver.Conn interface
 type n1qlConn struct {
 	clusterAddr string
@@ -211,7 +199,7 @@ func addAuthorization(url string) string {
 	return prefix + userInfo + suffix
 }
 
-func OpenN1QLConnection(name string) (driver.Conn, error) {
+func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	var queryAPIs []string
 
 	if strings.HasPrefix(name, "https") {
@@ -355,7 +343,7 @@ func serializeErrors(errors interface{}) string {
 	return fmt.Sprintf(" Error %v %T", errors, errors)
 }
 
-func (conn *n1qlConn) Prepare(query string) (driver.Stmt, error) {
+func (conn *n1qlConn) Prepare(query string) (Stmt, error) {
 	var argCount int
 
 	query = "PREPARE " + query
@@ -443,7 +431,7 @@ func decodeSignature(signature *json.RawMessage) interface{} {
 	return rows
 }
 
-func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (driver.Rows, error) {
+func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (Rows, error) {
 
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
@@ -520,7 +508,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (dri
 
 // Executes a query that returns a set of Rows.
 // Select statements should use this interface
-func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, error) {
+func (conn *n1qlConn) Query(query string, args ...interface{}) (Rows, error) {
 
 	if len(args) > 0 {
 		var argCount int
@@ -534,7 +522,7 @@ func (conn *n1qlConn) Query(query string, args []driver.Value) (driver.Rows, err
 	return conn.performQuery(query, nil)
 }
 
-func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (driver.Result, error) {
+func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (Result, error) {
 
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
@@ -582,7 +570,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (driv
 
 // Execer implementation. To be used for queries that do not return any rows
 // such as Create Index, Insert, Upset, Delete etc
-func (conn *n1qlConn) Exec(query string, args []driver.Value) (driver.Result, error) {
+func (conn *n1qlConn) Exec(query string, args...interface{}) (Result, error) {
 
 	if len(args) > 0 {
 		var argCount int
@@ -610,9 +598,9 @@ func prepareQuery(query string) (string, int) {
 
 //
 // Replace the conditional pqrams in the query and return the list of left-over args
-func preparePositionalArgs(query string, argCount int, args []driver.Value) (string, []driver.Value) {
+func preparePositionalArgs(query string, argCount int, args []interface{}) (string, []interface{}) {
 	subList := make([]string, 0)
-	newArgs := make([]driver.Value, 0)
+	newArgs := make([]interface{}, 0)
 
 	for i, arg := range args {
 		if i < argCount {
@@ -637,7 +625,7 @@ func preparePositionalArgs(query string, argCount int, args []driver.Value) (str
 
 // prepare a http request for the query
 //
-func prepareRequest(query string, queryAPI string, args []driver.Value) (*http.Request, error) {
+func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Request, error) {
 
 	postData := url.Values{}
 	postData.Set("statement", query)
@@ -686,7 +674,7 @@ func (stmt *n1qlStmt) NumInput() int {
 	return stmt.argCount
 }
 
-func buildPositionalArgList(args []driver.Value) string {
+func buildPositionalArgList(args []interface{}) string {
 	positionalArgs := make([]string, 0)
 	for _, arg := range args {
 		switch arg := arg.(type) {
@@ -716,7 +704,7 @@ func buildPositionalArgList(args []driver.Value) string {
 
 // prepare a http request for the query
 //
-func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*url.Values, error) {
+func (stmt *n1qlStmt) prepareRequest(args []interface{}) (*url.Values, error) {
 
 	postData := url.Values{}
 
@@ -743,7 +731,7 @@ func (stmt *n1qlStmt) prepareRequest(args []driver.Value) (*url.Values, error) {
 	return &postData, nil
 }
 
-func (stmt *n1qlStmt) Query(args []driver.Value) (driver.Rows, error) {
+func (stmt *n1qlStmt) Query(args ...interface{}) (Rows, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
@@ -764,7 +752,19 @@ retry:
 	return rows, err
 }
 
-func (stmt *n1qlStmt) Exec(args []driver.Value) (driver.Result, error) {
+func (stmt *n1qlStmt) QueryRow(args ...interface{}) Row {
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return nil
+	}	
+	hasFirst := rows.Next()
+	if !hasFirst {
+		return nil
+	}
+	return rows  // Row is a subset of Rows.
+}
+
+func (stmt *n1qlStmt) Exec(args ...interface{}) (Result, error) {
 	if stmt.prepared == "" {
 		return nil, fmt.Errorf("N1QL: Prepared statement not found")
 	}
