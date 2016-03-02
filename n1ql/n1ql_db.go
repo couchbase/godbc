@@ -11,9 +11,17 @@ package n1ql
 
 import (
 	"errors"
+	"io"
 
 	"github.com/couchbaselabs/godbc"
 )
+
+type N1qlDB interface {
+	godbc.DB
+	PrepareExtended(query string) (N1qlStmt, error)
+	QueryRaw(query string, args ...interface{}) (io.ReadCloser, error)
+	ExecRaw(query string, args ...interface{}) (io.ReadCloser, error)
+}
 
 // Implements godbc.DB interface.
 type n1qlDB struct {
@@ -44,12 +52,28 @@ func (db *n1qlDB) Exec(query string, args ...interface{}) (godbc.Result, error) 
 	return stmt.Exec(args...)
 }
 
+func (db *n1qlDB) ExecRaw(query string, args ...interface{}) (io.ReadCloser, error) {
+	stmt, err := db.prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	return stmt.ExecRaw(args...)
+}
+
 func (db *n1qlDB) Ping() error {
 	_, error := db.Query("select * from system:keyspaces")
 	return error
 }
 
 func (db *n1qlDB) Prepare(query string) (godbc.Stmt, error) {
+	return db.prepare(query)
+}
+
+func (db *n1qlDB) PrepareExtended(query string) (N1qlStmt, error) {
+	return db.prepare(query)
+}
+
+func (db *n1qlDB) prepare(query string) (*n1qlStmt, error) {
 	if db.conn == nil {
 		return nil, errors.New("N1QL connection is closed.")
 	}
@@ -62,6 +86,14 @@ func (db *n1qlDB) Query(query string, args ...interface{}) (godbc.Rows, error) {
 		return nil, err
 	}
 	return stmt.Query(args...)
+}
+
+func (db *n1qlDB) QueryRaw(query string, args ...interface{}) (io.ReadCloser, error) {
+	stmt, err := db.prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	return stmt.QueryRaw(args...)
 }
 
 func (db *n1qlDB) QueryRow(query string, args ...interface{}) godbc.Row {

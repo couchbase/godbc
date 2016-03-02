@@ -344,7 +344,7 @@ func serializeErrors(errors interface{}) string {
 	return fmt.Sprintf(" Error %v %T", errors, errors)
 }
 
-func (conn *n1qlConn) Prepare(query string) (godbc.Stmt, error) {
+func (conn *n1qlConn) Prepare(query string) (*n1qlStmt, error) {
 	var argCount int
 
 	query = "PREPARE " + query
@@ -430,6 +430,19 @@ func decodeSignature(signature *json.RawMessage) interface{} {
 	}
 
 	return rows
+}
+
+func (conn *n1qlConn) performQueryRaw(query string, requestValues *url.Values) (io.ReadCloser, error) {
+	resp, err := conn.doClientRequest(query, requestValues)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("%s", bod)
+	}
+	return resp.Body, nil
 }
 
 func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (godbc.Rows, error) {
@@ -521,6 +534,19 @@ func (conn *n1qlConn) Query(query string, args ...interface{}) (godbc.Rows, erro
 	}
 
 	return conn.performQuery(query, nil)
+}
+
+func (conn *n1qlConn) performExecRaw(query string, requestValues *url.Values) (io.ReadCloser, error) {
+	resp, err := conn.doClientRequest(query, requestValues)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("%s", bod)
+	}
+	return resp.Body, nil
 }
 
 func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (godbc.Result, error) {
@@ -653,126 +679,4 @@ func setQueryParams(v *url.Values) {
 	for key, value := range QueryParams {
 		v.Set(key, value)
 	}
-}
-
-type n1qlStmt struct {
-	conn      *n1qlConn
-	prepared  string
-	signature string
-	argCount  int
-	name      string
-}
-
-func (stmt *n1qlStmt) Close() error {
-	stmt.prepared = ""
-	stmt.signature = ""
-	stmt.argCount = 0
-	stmt = nil
-	return nil
-}
-
-func (stmt *n1qlStmt) NumInput() int {
-	return stmt.argCount
-}
-
-func buildPositionalArgList(args []interface{}) string {
-	positionalArgs := make([]string, 0)
-	for _, arg := range args {
-		switch arg := arg.(type) {
-		case string:
-			// add double quotes since this is a string
-			positionalArgs = append(positionalArgs, fmt.Sprintf("\"%v\"", arg))
-		case []byte:
-			positionalArgs = append(positionalArgs, string(arg))
-		default:
-			positionalArgs = append(positionalArgs, fmt.Sprintf("%v", arg))
-		}
-	}
-
-	if len(positionalArgs) > 0 {
-		paStr := "["
-		for i, param := range positionalArgs {
-			if i == len(positionalArgs)-1 {
-				paStr = fmt.Sprintf("%s%s]", paStr, param)
-			} else {
-				paStr = fmt.Sprintf("%s%s,", paStr, param)
-			}
-		}
-		return paStr
-	}
-	return ""
-}
-
-// prepare a http request for the query
-//
-func (stmt *n1qlStmt) prepareRequest(args []interface{}) (*url.Values, error) {
-
-	postData := url.Values{}
-
-	// use name prepared statement if possible
-	if stmt.name != "" {
-		postData.Set("prepared", fmt.Sprintf("\"%s\"", stmt.name))
-	} else {
-		postData.Set("prepared", stmt.prepared)
-	}
-
-	if len(args) < stmt.NumInput() {
-		return nil, fmt.Errorf("N1QL: Insufficient args. Prepared statement contains positional args")
-	}
-
-	if len(args) > 0 {
-		paStr := buildPositionalArgList(args)
-		if len(paStr) > 0 {
-			postData.Set("args", paStr)
-		}
-	}
-
-	setQueryParams(&postData)
-
-	return &postData, nil
-}
-
-func (stmt *n1qlStmt) Query(args ...interface{}) (godbc.Rows, error) {
-	if stmt.prepared == "" {
-		return nil, fmt.Errorf("N1QL: Prepared statement not found")
-	}
-
-retry:
-	requestValues, err := stmt.prepareRequest(args)
-	if err != nil {
-		return nil, err
-	}
-
-	rows, err := stmt.conn.performQuery("", requestValues)
-	if err != nil && stmt.name != "" {
-		// retry once if we used a named prepared statement
-		stmt.name = ""
-		goto retry
-	}
-
-	return rows, err
-}
-
-func (stmt *n1qlStmt) QueryRow(args ...interface{}) godbc.Row {
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return nil
-	}
-	hasFirst := rows.Next()
-	if !hasFirst {
-		return nil
-	}
-	return rows // Row is a subset of Rows.
-}
-
-func (stmt *n1qlStmt) Exec(args ...interface{}) (godbc.Result, error) {
-	if stmt.prepared == "" {
-		return nil, fmt.Errorf("N1QL: Prepared statement not found")
-	}
-	requestValues, err := stmt.prepareRequest(args)
-	if err != nil {
-		return nil, err
-	}
-
-	return stmt.conn.performExec("", requestValues)
 }

@@ -12,11 +12,17 @@ package n1ql
 import "github.com/couchbaselabs/godbc"
 
 func Open(dataSourceName string) (godbc.DB, error) {
+	return open(dataSourceName)
+}
+
+func OpenExtended(dataSourceName string) (N1qlDB, error) {
+	return open(dataSourceName)
+}
+
+func open(dataSourceName string) (*n1qlDB, error) {
 	n1qlConn, err := OpenN1QLConnection(dataSourceName)
 	if err != nil {
 		return nil, err
 	}
 	return &n1qlDB{conn: n1qlConn}, nil
 }
-
-// func OpenExtended(dataSourceName string) (N1qlDB, error)
