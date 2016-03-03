@@ -443,8 +443,7 @@ func (conn *n1qlConn) performQueryRaw(query string, requestValues *url.Values) (
 	}
 
 	if resp.StatusCode != 200 {
-		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("%s", bod)
+		return resp.Body, fmt.Errorf("Request failed with error code %d.", resp.StatusCode)
 	}
 	return resp.Body, nil
 }
@@ -540,6 +539,19 @@ func (conn *n1qlConn) Query(query string, args ...interface{}) (godbc.Rows, erro
 	return conn.performQuery(query, nil)
 }
 
+func (conn *n1qlConn) QueryRaw(query string, args ...interface{}) (io.ReadCloser, error) {
+	if len(args) > 0 {
+		var argCount int
+		query, argCount = prepareQuery(query)
+		if argCount != len(args) {
+			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
+		}
+		query, args = preparePositionalArgs(query, argCount, args)
+	}
+
+	return conn.performQueryRaw(query, nil)
+}
+
 func (conn *n1qlConn) performExecRaw(query string, requestValues *url.Values) (io.ReadCloser, error) {
 	resp, err := conn.doClientRequest(query, requestValues)
 	if err != nil {
@@ -547,8 +559,7 @@ func (conn *n1qlConn) performExecRaw(query string, requestValues *url.Values) (i
 	}
 
 	if resp.StatusCode != 200 {
-		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("%s", bod)
+		return resp.Body, fmt.Errorf("Request failed with error code %d.", resp.StatusCode)
 	}
 	return resp.Body, nil
 }
@@ -613,6 +624,19 @@ func (conn *n1qlConn) Exec(query string, args ...interface{}) (godbc.Result, err
 	}
 
 	return conn.performExec(query, nil)
+}
+
+func (conn *n1qlConn) ExecRaw(query string, args ...interface{}) (io.ReadCloser, error) {
+	if len(args) > 0 {
+		var argCount int
+		query, argCount = prepareQuery(query)
+		if argCount != len(args) {
+			return nil, fmt.Errorf("Argument count mismatch %d != %d", argCount, len(args))
+		}
+		query, args = preparePositionalArgs(query, argCount, args)
+	}
+
+	return conn.performExecRaw(query, nil)
 }
 
 func prepareQuery(query string) (string, int) {

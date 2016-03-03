@@ -21,6 +21,9 @@ func main() {
 	// Try this query instead, for a much larger (streaming!) output.
 	//ioSrc, err := db.QueryRaw("select * from `beer-sample`")
 
+	// For a command rather than a query, try this.
+	//ioSrc, err := db.ExecRaw("insert into default(key, value) values ('111', { 'a': 1, 'b': 2 })")
+
 	if err != nil {
 		fmt.Printf("ERROR: %s\n", err.Error())
 	}

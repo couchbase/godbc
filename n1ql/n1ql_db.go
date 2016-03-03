@@ -19,7 +19,23 @@ import (
 type N1qlDB interface {
 	godbc.DB
 	PrepareExtended(query string) (N1qlStmt, error)
+
+	// Run the query with the given parameters.
+	// Returns the raw streaming input from the body of the RESTful request
+	// to the database. The returned error contains a short description
+	// of what went wrong with the query.
+	//
+	// Note that under some conditions, where the request was actually sent to the
+	// server, both the stream and an error are returned.
 	QueryRaw(query string, args ...interface{}) (io.ReadCloser, error)
+
+	// Execute the statement with the given parameters.
+	// Returns the raw streaming input from the body of the RESTful request
+	// to the database. The returned error contains a short description
+	// of what went wrong with the query.
+	//
+	// Note that under some conditions, where the request was actually sent to the
+	// server, both the stream and an error are returned.
 	ExecRaw(query string, args ...interface{}) (io.ReadCloser, error)
 }
 
@@ -28,13 +44,15 @@ type n1qlDB struct {
 	conn *n1qlConn
 }
 
+var errorNoConnection = errors.New("N1QL connection is already closed.")
+
 func (db *n1qlDB) Begin() (godbc.Tx, error) {
 	return nil, errors.New("Transactions are not supported.")
 }
 
 func (db *n1qlDB) Close() error {
 	if db.conn == nil {
-		return errors.New("N1QL connection is already closed.")
+		return errorNoConnection
 	}
 	err := db.conn.Close()
 	if err != nil {
@@ -53,11 +71,10 @@ func (db *n1qlDB) Exec(query string, args ...interface{}) (godbc.Result, error) 
 }
 
 func (db *n1qlDB) ExecRaw(query string, args ...interface{}) (io.ReadCloser, error) {
-	stmt, err := db.prepare(query)
-	if err != nil {
-		return nil, err
+	if db.conn == nil {
+		return nil, errorNoConnection
 	}
-	return stmt.ExecRaw(args...)
+	return db.conn.ExecRaw(query, args...)
 }
 
 func (db *n1qlDB) Ping() error {
@@ -75,7 +92,7 @@ func (db *n1qlDB) PrepareExtended(query string) (N1qlStmt, error) {
 
 func (db *n1qlDB) prepare(query string) (*n1qlStmt, error) {
 	if db.conn == nil {
-		return nil, errors.New("N1QL connection is closed.")
+		return nil, errorNoConnection
 	}
 	return db.conn.Prepare(query)
 }
@@ -89,11 +106,10 @@ func (db *n1qlDB) Query(query string, args ...interface{}) (godbc.Rows, error) {
 }
 
 func (db *n1qlDB) QueryRaw(query string, args ...interface{}) (io.ReadCloser, error) {
-	stmt, err := db.prepare(query)
-	if err != nil {
-		return nil, err
+	if db.conn == nil {
+		return nil, errorNoConnection
 	}
-	return stmt.QueryRaw(args...)
+	return db.conn.QueryRaw(query, args...)
 }
 
 func (db *n1qlDB) QueryRow(query string, args ...interface{}) godbc.Row {
