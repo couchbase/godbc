@@ -13,7 +13,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/couchbaselabs/godbc"
+	"github.com/couchbase/godbc"
 )
 
 type N1qlDB interface {

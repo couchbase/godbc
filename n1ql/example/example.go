@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/couchbaselabs/godbc/n1ql"
+	"github.com/couchbase/godbc/n1ql"
 )
 
 // Illustrates the use of the raw result interface of the N1QL module.

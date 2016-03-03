@@ -9,7 +9,7 @@
 
 package n1ql
 
-import "github.com/couchbaselabs/godbc"
+import "github.com/couchbase/godbc"
 
 func Open(dataSourceName string) (godbc.DB, error) {
 	return open(dataSourceName)

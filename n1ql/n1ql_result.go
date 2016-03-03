@@ -9,7 +9,7 @@
 
 package n1ql
 
-import "github.com/couchbaselabs/godbc"
+import "github.com/couchbase/godbc"
 
 // Implements godbc.Result interfaces.
 type n1qlResult struct {

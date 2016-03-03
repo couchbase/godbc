@@ -14,7 +14,7 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/couchbaselabs/godbc"
+	"github.com/couchbase/godbc"
 )
 
 type N1qlStmt interface {

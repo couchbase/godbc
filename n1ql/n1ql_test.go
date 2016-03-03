@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/couchbaselabs/godbc"
+	"github.com/couchbase/godbc"
 )
 
 func TestPing(t *testing.T) {
