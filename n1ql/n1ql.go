@@ -43,7 +43,7 @@ var (
 	N1QL_DEFAULT_HOST      = "127.0.0.1"
 	N1QL_DEFAULT_PORT      = 8093
 	N1QL_POOL_SIZE         = 2 ^ 10 // 1 MB
-	N1QL_DEFAULT_STATEMENT = "SELECT 1"
+	N1QL_DEFAULT_STATEMENT = "SELECT RAW 1"
 )
 
 // flags
@@ -58,6 +58,10 @@ var QueryParams map[string]string
 // Username and password. Used for querying the cluster endpoint,
 // which may require authorization.
 var username, password string
+
+func init() {
+	QueryParams = make(map[string]string)
+}
 
 func SetQueryParams(key string, value string) error {
 

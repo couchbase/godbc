@@ -61,7 +61,7 @@ func (db *n1qlDB) ExecRaw(query string, args ...interface{}) (io.ReadCloser, err
 }
 
 func (db *n1qlDB) Ping() error {
-	_, error := db.Query("select * from system:keyspaces")
+	_, error := db.Query(N1QL_DEFAULT_STATEMENT)
 	return error
 }
 
