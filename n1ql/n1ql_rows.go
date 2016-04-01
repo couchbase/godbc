@@ -62,11 +62,14 @@ func (rows *n1qlRows) populateRows() {
 	var resultRows []interface{}
 	defer rows.resp.Body.Close()
 
-	resultsDecoder := json.NewDecoder(rows.results)
-	err := resultsDecoder.Decode(&resultRows)
-
+	resultsDecoder, err := getDecoder(rows.results)
 	if err != nil {
 		rows.errChan <- err
+	} else {
+		err = resultsDecoder.Decode(&resultRows)
+		if err != nil {
+			rows.errChan <- err
+		}
 	}
 
 	if rows.extras != nil {

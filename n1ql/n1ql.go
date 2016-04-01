@@ -448,6 +448,13 @@ func (conn *n1qlConn) performQueryRaw(query string, requestValues *url.Values) (
 	return resp.Body, nil
 }
 
+func getDecoder(r io.Reader) (*json.Decoder, error) {
+	if r == nil {
+		return nil, fmt.Errorf("Failed to decode nil response.")
+	}
+	return json.NewDecoder(r), nil
+}
+
 func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (godbc.Rows, error) {
 
 	resp, err := conn.doClientRequest(query, requestValues)
@@ -461,7 +468,10 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (god
 	}
 
 	var resultMap map[string]*json.RawMessage
-	decoder := json.NewDecoder(resp.Body)
+	decoder, err := getDecoder(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 
 	err = decoder.Decode(&resultMap)
 	if err != nil {
