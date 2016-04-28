@@ -59,6 +59,10 @@ var QueryParams map[string]string
 // which may require authorization.
 var username, password string
 
+// Used to decide whether to skip verification of certificates when
+// connecting to an ssl port.
+var skipVerify = true
+
 func init() {
 	QueryParams = make(map[string]string)
 }
@@ -90,6 +94,10 @@ func SetPassthroughMode(val bool) {
 func SetUsernamePassword(u, p string) {
 	username = u
 	password = p
+}
+
+func SetSkipVerify(skip bool) {
+	skipVerify = skip
 }
 
 // implements driver.Conn interface
@@ -207,13 +215,14 @@ func addAuthorization(url string) string {
 func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	var queryAPIs []string
 
-	if strings.HasPrefix(name, "https") {
+	if strings.HasPrefix(name, "https") && skipVerify {
 		HTTPTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	name = addAuthorization(name)
 
 	//First check if the input string is a cluster endpoint
+	couchbase.SetSkipVerify(skipVerify)
 	client, err := couchbase.Connect(name)
 	var perr error = nil
 	if err != nil {
@@ -253,7 +262,8 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	if err != nil {
 		var final_error string
 		if perr != nil {
-			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error() + "\n" + perr.Error()
+			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error() +
+				"\n " + perr.Error()
 		} else {
 			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error()
 		}
