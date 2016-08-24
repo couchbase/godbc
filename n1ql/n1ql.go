@@ -260,12 +260,9 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 
 	resp, err := conn.client.Do(request)
 	if err != nil {
-		var final_error string
+		final_error := fmt.Errorf("N1QL: Connection failed %v", stripurl(err.Error())).Error()
 		if perr != nil {
-			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error() +
-				"\n " + perr.Error()
-		} else {
-			final_error = fmt.Errorf("N1QL: Connection failed %v", err).Error()
+			final_error = final_error + "\n " + stripurl(perr.Error())
 		}
 		return nil, fmt.Errorf("%v", final_error)
 	}
@@ -277,6 +274,28 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	}
 
 	return conn, nil
+}
+
+func stripurl(inputstring string) string {
+	// Detect http* within the string.
+	startindex := strings.Index(inputstring, "http")
+	endindex := strings.Index(inputstring[startindex:], " ")
+	inputurl := inputstring[startindex : startindex+endindex]
+
+	// Parse into a url and detect password
+	urlpart, _ := url.Parse(inputurl)
+	user := urlpart.User.String()
+
+	uname := urlpart.User.Username()
+	pwd, _ := urlpart.User.Password()
+
+	// detect the index on the password
+	startindex = strings.Index(inputstring, user)
+
+	//reform the error message, with * as the password
+	inputstring = inputstring[:startindex+len(uname)+1] + "*" + inputstring[startindex+len(uname)+1+len(pwd):]
+
+	return inputstring
 }
 
 // do client request with retry
