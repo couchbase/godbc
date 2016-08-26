@@ -283,8 +283,16 @@ func stripurl(inputstring string) string {
 	inputurl := inputstring[startindex : startindex+endindex]
 
 	// Parse into a url and detect password
-	urlpart, _ := url.Parse(inputurl)
-	user := urlpart.User.String()
+	urlpart, err := url.Parse(inputurl)
+	if err != nil {
+		return inputstring
+	}
+
+	u := urlpart.User
+	if u == nil {
+		return inputstring
+	}
+	user := u.String()
 
 	uname := urlpart.User.Username()
 	pwd, _ := urlpart.User.Password()
