@@ -739,7 +739,10 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 	}
 
 	setQueryParams(&postData)
-	request, _ := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
+	request, err := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
+	if err != nil {
+		return nil, err
+	}
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	return request, nil
