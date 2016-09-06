@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/godbc"
@@ -296,11 +297,26 @@ func stripurl(inputstring string) string {
 	uname := u.Username()
 	pwd, _ := u.Password()
 
+	//Find how many symbols there are in the User string
+	num := 0
+
+	for _, letter := range fmt.Sprintf("%v", pwd) {
+		if (unicode.IsSymbol(letter) || unicode.IsPunct(letter)) && letter != '*' {
+			num = num + 1
+		}
+	}
+
 	// detect the index on the password
 	startindex = strings.Index(inputstring, uname)
 
 	//reform the error message, with * as the password
 	inputstring = inputstring[:startindex+len(uname)+1] + "*" + inputstring[startindex+len(uname)+1+len(pwd):]
+
+	//Replace all the special characters encoding
+	for num > 0 {
+		num = num - 1
+		inputstring = stripurl(inputstring)
+	}
 
 	return inputstring
 }
