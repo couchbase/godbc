@@ -292,13 +292,12 @@ func stripurl(inputstring string) string {
 	if u == nil {
 		return inputstring
 	}
-	user := u.String()
 
-	uname := urlpart.User.Username()
-	pwd, _ := urlpart.User.Password()
+	uname := u.Username()
+	pwd, _ := u.Password()
 
 	// detect the index on the password
-	startindex = strings.Index(inputstring, user)
+	startindex = strings.Index(inputstring, uname)
 
 	//reform the error message, with * as the password
 	inputstring = inputstring[:startindex+len(uname)+1] + "*" + inputstring[startindex+len(uname)+1+len(pwd):]
