@@ -97,6 +97,10 @@ func SetUsernamePassword(u, p string) {
 	password = p
 }
 
+func hasUsernamePassword() bool {
+	return username != "" || password != ""
+}
+
 func SetSkipVerify(skip bool) {
 	skipVerify = skip
 }
@@ -140,6 +144,9 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	if hasUsernamePassword() {
+		request.SetBasicAuth(username, password)
+	}
 	queryAPIs := make([]string, 0)
 
 	hostname := strings.Split(n1qlEndPoint, ":")[0]
@@ -183,36 +190,6 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	return queryAPIs, nil
 }
 
-// Adds authorization information to the given url.
-// A url like http://localhost:8091/ is converted to
-// http://user:password@localhost:8091/ .
-func addAuthorization(url string) string {
-	if strings.Contains(url, "@") {
-		// Already contains authorization.
-		return url
-	}
-	if username == "" {
-		// Username/password not set.
-		return url
-	}
-	// Assume the URL is in one of 3 forms:
-	//   http://hostname:port...
-	//   https://hostname:port...
-	//   hostname:port...
-	// Where the ... indicates zero or more trailing characters.
-	userInfo := username + ":" + password + "@"
-	var prefix string
-	if strings.HasPrefix(url, "http://") {
-		prefix = "http://"
-	} else if strings.HasPrefix(url, "https://") {
-		prefix = "https://"
-	} else {
-		prefix = ""
-	}
-	suffix := strings.TrimPrefix(url, prefix)
-	return prefix + userInfo + suffix
-}
-
 func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	var queryAPIs []string
 
@@ -220,11 +197,16 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 		HTTPTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	name = addAuthorization(name)
-
 	//First check if the input string is a cluster endpoint
 	couchbase.SetSkipVerify(skipVerify)
-	client, err := couchbase.Connect(name)
+
+	var client couchbase.Client
+	var err error
+	if hasUsernamePassword() {
+		client, err = couchbase.ConnectWithAuthCreds(name, username, password)
+	} else {
+		client, err = couchbase.Connect(name)
+	}
 	var perr error = nil
 	if err != nil {
 		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint %s. Error %v", name, err)
@@ -351,6 +333,9 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 				request, _ = http.NewRequest("POST", queryAPI, nil)
 			}
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			if hasUsernamePassword() {
+				request.SetBasicAuth(username, password)
+			}
 		}
 
 		resp, err := conn.client.Do(request)
@@ -760,6 +745,9 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 		return nil, err
 	}
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	if hasUsernamePassword() {
+		request.SetBasicAuth(username, password)
+	}
 
 	return request, nil
 }
