@@ -144,6 +144,7 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Add("User-Agent", "godbc/n1ql")
 	if hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
 	}
@@ -333,6 +334,7 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 				request, _ = http.NewRequest("POST", queryAPI, nil)
 			}
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Add("User-Agent", "godbc/n1ql")
 			if hasUsernamePassword() {
 				request.SetBasicAuth(username, password)
 			}
@@ -744,6 +746,7 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 	if err != nil {
 		return nil, err
 	}
+	request.Header.Add("User-Agent", "godbc/n1ql")
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	if hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
