@@ -28,6 +28,7 @@ import (
 
 	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/godbc"
+	"github.com/couchbase/query/util"
 )
 
 // Common error codes
@@ -140,11 +141,15 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 	return ""
 }
 
+func setCBUserAgent(request *http.Request) {
+	request.Header.Add("CB-User-Agent", "godbc/" + util.VERSION)
+}
+
 func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Add("User-Agent", "godbc/n1ql")
+	setCBUserAgent(request)
 	if hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
 	}
@@ -334,7 +339,7 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 				request, _ = http.NewRequest("POST", queryAPI, nil)
 			}
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-			request.Header.Add("User-Agent", "godbc/n1ql")
+			setCBUserAgent(request)
 			if hasUsernamePassword() {
 				request.SetBasicAuth(username, password)
 			}
@@ -746,8 +751,8 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Add("User-Agent", "godbc/n1ql")
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	setCBUserAgent(request)
 	if hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
 	}
