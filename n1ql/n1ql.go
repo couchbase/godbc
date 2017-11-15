@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -126,15 +127,26 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 			if port, ok := ns.Services["n1ql"]; ok == true {
 				var hostname string
 				//n1ql service found
+				var ipv6 = false
 				if ns.Hostname == "" {
-					hostUrl, _ := url.Parse(name)
-					hn := hostUrl.Host
-					hostname = strings.Split(hn, ":")[0]
+					hostnm := strings.TrimSpace(name)
+					if strings.HasPrefix(hostnm, "http://") || strings.HasPrefix(hostnm, "https://") {
+						hostUrl, _ := url.Parse(name)
+						hostnm = hostUrl.Host
+					}
+
+					hostname, _, ipv6, _ = HostNameandPort(hostnm)
+
 				} else {
 					hostname = ns.Hostname
 				}
 
-				return fmt.Sprintf("%s:%d", hostname, port)
+				if ipv6 {
+					return fmt.Sprintf("[%s]:%d", hostname, port)
+				} else {
+					return fmt.Sprintf("%s:%d", hostname, port)
+				}
+
 			}
 		}
 	}
@@ -142,7 +154,7 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 }
 
 func setCBUserAgent(request *http.Request) {
-	request.Header.Add("CB-User-Agent", "godbc/" + util.VERSION)
+	request.Header.Add("CB-User-Agent", "godbc/"+util.VERSION)
 }
 
 func getQueryApi(n1qlEndPoint string) ([]string, error) {
@@ -155,7 +167,10 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	}
 	queryAPIs := make([]string, 0)
 
-	hostname := strings.Split(n1qlEndPoint, ":")[0]
+	hostname, _, ipv6, err := HostNameandPort(n1qlEndPoint)
+	if err != nil {
+		return nil, fmt.Errorf("N1QL: Failed to parse URL. Error %v", err)
+	}
 
 	resp, err := HTTPClient.Do(request)
 	if err != nil {
@@ -184,9 +199,16 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 		}
 	}
 
-	// if the end-points contain 127.0.0.1 then replace them with the actual hostname
+	localhost := "127.0.0.1"
+
+	if ipv6 {
+		hostname = "[" + hostname + "]"
+		localhost = "[::1]"
+	}
+
+	// if the end-points contain localhost IPv4 or IPv6 then replace them with the actual hostname
 	for i, qa := range queryAPIs {
-		queryAPIs[i] = strings.Replace(qa, "127.0.0.1", hostname, -1)
+		queryAPIs[i] = strings.Replace(qa, localhost, hostname, -1)
 	}
 
 	if len(queryAPIs) == 0 {
@@ -747,6 +769,7 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 	}
 
 	setQueryParams(&postData)
+
 	request, err := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
 	if err != nil {
 		return nil, err
@@ -768,4 +791,61 @@ func setQueryParams(v *url.Values) {
 	for key, value := range QueryParams {
 		v.Set(key, value)
 	}
+}
+
+// Return hostname and port for IPv4 and IPv6
+func HostNameandPort(node string) (host, port string, ipv6 bool, err error) {
+	tokens := []string{}
+
+	// Set _IPv6 based on input address
+	ipv6, err = IsIPv6(node)
+
+	if err != nil {
+		return "", "", false, err
+	}
+
+	err = nil
+	// For IPv6
+	if ipv6 {
+		// Then the url should be of the form [::1]:8091
+		tokens = strings.Split(node, "]:")
+		host = strings.Replace(tokens[0], "[", "", 1)
+
+	} else {
+		// For IPv4
+		tokens = strings.Split(node, ":")
+		host = tokens[0]
+	}
+
+	if len(tokens) == 2 {
+		port = tokens[1]
+	} else {
+		port = ""
+	}
+
+	return
+}
+
+func IsIPv6(str string) (bool, error) {
+
+	//ipv6 - can be [::1]:8091
+	host, _, err := net.SplitHostPort(str)
+	if err != nil {
+		host = str
+	}
+
+	ip := net.ParseIP(host)
+	if ip.To4() == nil {
+		//Not an ipv4 address
+		// check if ipv6
+		if ip.To16() == nil {
+			// Not ipv6
+			return false, fmt.Errorf("\nThis is an incorrect address %v", str)
+		}
+		// IPv6
+		return true, nil
+
+	}
+	// IPv4
+	return false, nil
 }
