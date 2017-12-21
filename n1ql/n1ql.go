@@ -153,8 +153,14 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 	return ""
 }
 
+var cbUserAgent string = "godbc/"+util.VERSION
+
+func SetCBUserAgentHeader(v string) {
+	cbUserAgent = v
+}
+
 func setCBUserAgent(request *http.Request) {
-	request.Header.Add("CB-User-Agent", "godbc/"+util.VERSION)
+	request.Header.Add("CB-User-Agent", cbUserAgent)
 }
 
 func getQueryApi(n1qlEndPoint string) ([]string, error) {
