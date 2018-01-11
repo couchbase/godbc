@@ -47,6 +47,7 @@ var (
 	N1QL_DEFAULT_PORT      = 8093
 	N1QL_POOL_SIZE         = 2 ^ 10 // 1 MB
 	N1QL_DEFAULT_STATEMENT = "SELECT RAW 1;"
+	LOCALHOST              = N1QL_DEFAULT_HOST
 )
 
 // flags
@@ -153,7 +154,7 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 	return ""
 }
 
-var cbUserAgent string = "godbc/"+util.VERSION
+var cbUserAgent string = "godbc/" + util.VERSION
 
 func SetCBUserAgentHeader(v string) {
 	cbUserAgent = v
@@ -205,16 +206,14 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 		}
 	}
 
-	localhost := "127.0.0.1"
-
 	if ipv6 {
 		hostname = "[" + hostname + "]"
-		localhost = "[::1]"
+		LOCALHOST = "[::1]"
 	}
 
 	// if the end-points contain localhost IPv4 or IPv6 then replace them with the actual hostname
 	for i, qa := range queryAPIs {
-		queryAPIs[i] = strings.Replace(qa, localhost, hostname, -1)
+		queryAPIs[i] = strings.Replace(qa, LOCALHOST, hostname, -1)
 	}
 
 	if len(queryAPIs) == 0 {
@@ -833,11 +832,14 @@ func HostNameandPort(node string) (host, port string, ipv6 bool, err error) {
 }
 
 func IsIPv6(str string) (bool, error) {
-
 	//ipv6 - can be [::1]:8091
 	host, _, err := net.SplitHostPort(str)
 	if err != nil {
 		host = str
+	}
+
+	if host == "localhost" {
+		host = LOCALHOST
 	}
 
 	ip := net.ParseIP(host)
@@ -848,6 +850,7 @@ func IsIPv6(str string) (bool, error) {
 			// Not ipv6
 			return false, fmt.Errorf("\nThis is an incorrect address %v", str)
 		}
+
 		// IPv6
 		return true, nil
 
