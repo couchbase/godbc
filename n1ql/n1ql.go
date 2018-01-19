@@ -183,6 +183,7 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%v", err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
@@ -429,6 +430,7 @@ func (conn *n1qlConn) Prepare(query string) (*n1qlStmt, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
@@ -532,6 +534,7 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (god
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
@@ -651,6 +654,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (godb
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
@@ -832,6 +836,7 @@ func HostNameandPort(node string) (host, port string, ipv6 bool, err error) {
 }
 
 func IsIPv6(str string) (bool, error) {
+
 	//ipv6 - can be [::1]:8091
 	host, _, err := net.SplitHostPort(str)
 	if err != nil {
@@ -850,7 +855,6 @@ func IsIPv6(str string) (bool, error) {
 			// Not ipv6
 			return false, fmt.Errorf("\nThis is an incorrect address %v", str)
 		}
-
 		// IPv6
 		return true, nil
 
