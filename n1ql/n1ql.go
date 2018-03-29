@@ -848,6 +848,12 @@ func IsIPv6(str string) (bool, error) {
 	}
 
 	ip := net.ParseIP(host)
+	if ip == nil {
+		// Essentially this is a FQDN. Golangs ParseIP cannot parse IPs that are non-numerical.
+		// It could also be an incorrect address. But that can be handled by split host port.
+		// This method is only to check if address is IPv6.
+		return false, nil
+	}
 	if ip.To4() == nil {
 		//Not an ipv4 address
 		// check if ipv6
