@@ -66,6 +66,9 @@ var username, password string
 // Used to decide whether to skip verification of certificates when
 // connecting to an ssl port.
 var skipVerify = true
+var certFile = ""
+var keyFile = ""
+var rootFile = ""
 
 func init() {
 	QueryParams = make(map[string]string)
@@ -108,6 +111,18 @@ func SetSkipVerify(skip bool) {
 	skipVerify = skip
 }
 
+func SetCertFile(cert string) {
+	certFile = cert
+}
+
+func SetKeyFile(cert string) {
+	keyFile = cert
+}
+
+func SetRootFile(cert string) {
+	rootFile = cert
+}
+
 // implements driver.Conn interface
 type n1qlConn struct {
 	clusterAddr string
@@ -121,11 +136,19 @@ var MaxIdleConnsPerHost = 10
 var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
 var HTTPClient = &http.Client{Transport: HTTPTransport}
 
-func discoverN1QLService(name string, ps couchbase.PoolServices) string {
+func discoverN1QLService(name string, ps couchbase.PoolServices) (string, bool) {
+	isHttps := false
 
 	for _, ns := range ps.NodesExt {
 		if ns.Services != nil {
-			if port, ok := ns.Services["n1ql"]; ok == true {
+			port, ok := ns.Services["n1ql"]
+
+			if strings.HasPrefix(name, "https://") {
+				isHttps = true
+				port, ok = ns.Services["n1qlSSL"]
+			}
+
+			if ok {
 				var hostname string
 				//n1ql service found
 				var ipv6 = false
@@ -143,15 +166,15 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) string {
 				}
 
 				if ipv6 {
-					return fmt.Sprintf("[%s]:%d", hostname, port)
+					return fmt.Sprintf("[%s]:%d", hostname, port), isHttps
 				} else {
-					return fmt.Sprintf("%s:%d", hostname, port)
+					return fmt.Sprintf("%s:%d", hostname, port), isHttps
 				}
 
 			}
 		}
 	}
-	return ""
+	return "", isHttps
 }
 
 var cbUserAgent string = "godbc/" + util.VERSION
@@ -164,8 +187,16 @@ func setCBUserAgent(request *http.Request) {
 	request.Header.Add("CB-User-Agent", cbUserAgent)
 }
 
-func getQueryApi(n1qlEndPoint string) ([]string, error) {
-	queryAdmin := "http://" + n1qlEndPoint + "/admin/clusters/default/nodes"
+func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
+
+	queryAdmin := n1qlEndPoint + "/admin/clusters/default/nodes"
+
+	if isHttps {
+		queryAdmin = "https://" + queryAdmin
+	} else {
+		queryAdmin = "http://" + queryAdmin
+	}
+
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	setCBUserAgent(request)
@@ -175,6 +206,7 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 	queryAPIs := make([]string, 0)
 
 	hostname, _, ipv6, err := HostNameandPort(n1qlEndPoint)
+
 	if err != nil {
 		return nil, fmt.Errorf("N1QL: Failed to parse URL. Error %v", err)
 	}
@@ -227,12 +259,35 @@ func getQueryApi(n1qlEndPoint string) ([]string, error) {
 func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	var queryAPIs []string
 
-	if strings.HasPrefix(name, "https") && skipVerify {
-		HTTPTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
+	if strings.HasPrefix(name, "https") {
+		//First check if the input string is a cluster endpoint
+		couchbase.SetSkipVerify(skipVerify)
 
-	//First check if the input string is a cluster endpoint
-	couchbase.SetSkipVerify(skipVerify)
+		if skipVerify {
+			HTTPTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		} else {
+			if certFile != "" && keyFile != "" {
+				couchbase.SetCertFile(certFile)
+				couchbase.SetKeyFile(keyFile)
+			} else {
+				//error need to pass both certfile and keyfile
+				return nil, fmt.Errorf("N1QL: Need to pass both certfile and keyfile")
+			}
+
+			if rootFile != "" {
+				couchbase.SetRootFile(rootFile)
+			}
+
+			// For 18093 connections
+			cfg, err := couchbase.ClientConfigForX509(certFile, keyFile, rootFile)
+			if err != nil {
+				return nil, err
+			}
+
+			HTTPTransport.TLSClientConfig = cfg
+
+		}
+	}
 
 	var client couchbase.Client
 	var err error
@@ -256,16 +311,15 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 			return nil, fmt.Errorf("N1QL: Failed to get NodeServices list. Error %v", err)
 		}
 
-		n1qlEndPoint := discoverN1QLService(name, ps)
+		n1qlEndPoint, isHttps := discoverN1QLService(name, ps)
 		if n1qlEndPoint == "" {
 			return nil, fmt.Errorf("N1QL: No query service found on this cluster")
 		}
 
-		queryAPIs, err = getQueryApi(n1qlEndPoint)
+		queryAPIs, err = getQueryApi(n1qlEndPoint, isHttps)
 		if err != nil {
 			return nil, err
 		}
-
 	}
 
 	conn := &n1qlConn{client: HTTPClient, queryAPIs: queryAPIs}
