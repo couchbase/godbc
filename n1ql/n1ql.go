@@ -162,7 +162,7 @@ func discoverN1QLService(name string, ps couchbase.PoolServices) (string, bool) 
 					hostname, _, ipv6, _ = HostNameandPort(hostnm)
 
 				} else {
-					hostname = ns.Hostname
+					hostname, _, ipv6, _ = HostNameandPort(ns.Hostname)
 				}
 
 				if ipv6 {
@@ -288,7 +288,6 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 
 		}
 	}
-
 	var client couchbase.Client
 	var err error
 	if hasUsernamePassword() {
