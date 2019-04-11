@@ -104,7 +104,7 @@ func SetUsernamePassword(u, p string) {
 }
 
 func hasUsernamePassword() bool {
-	return username != "" || password != ""
+	return username != "" && password != ""
 }
 
 func SetSkipVerify(skip bool) {
@@ -838,7 +838,7 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 	}
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	setCBUserAgent(request)
-	if hasUsernamePassword() {
+	if !hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
 	}
 
