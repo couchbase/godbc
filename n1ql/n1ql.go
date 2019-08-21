@@ -70,8 +70,19 @@ var certFile = ""
 var keyFile = ""
 var rootFile = ""
 
+var isAnalytics = false
+var networkCfg = "default"
+
 func init() {
 	QueryParams = make(map[string]string)
+}
+
+func SetIsAnalytics(val bool) {
+	isAnalytics = val
+}
+
+func SetNetworkType(networkType string) {
+	networkCfg = networkType
 }
 
 func SetQueryParams(key string, value string) error {
@@ -136,45 +147,112 @@ var MaxIdleConnsPerHost = 10
 var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
 var HTTPClient = &http.Client{Transport: HTTPTransport}
 
-func discoverN1QLService(name string, ps couchbase.PoolServices) (string, bool) {
+// Auto discover N1QL and Analytics services depending on input
+func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics bool, networkType string) ([]string, error) {
+	var hostnm string
+	var port int
+	var ipv6, ok bool
+	var hostUrl *url.URL
+
 	isHttps := false
+	serviceType := "n1ql"
+	serviceTypeSsl := "n1qlSSL"
+
+	// Since analytics doesnt have a rest endpoint that lists the cluster nodes
+	// We need to populate the list of analytics APIs here itself
+	// We might as well do the same for query. This makes getQueryApi() redundant.
+	queryAPIs := []string{}
+
+	if isAnalytics {
+		serviceType = "cbas"
+		serviceTypeSsl = "cbasSSL"
+	}
+
+	// If the network type isn't provided, then we need to detect whether to use default address or alternate address
+	// by comparing the input hostname with the hostname's under services.
+	// If it matches then we know its a default (internal address), else we can think of it as an external address and
+	// move on, throwing an error if that doesnt work.
+	hostnm = strings.TrimSpace(name)
+	if strings.HasPrefix(hostnm, "http://") || strings.HasPrefix(hostnm, "https://") {
+		hostUrl, _ = url.Parse(name)
+		hostnm = hostUrl.Host
+	}
+
+	if networkCfg == "auto" {
+		for _, ns := range ps.NodesExt {
+			if strings.Compare(ns.Hostname, hostUrl.Hostname()) == 0 {
+				networkCfg = "default"
+				break
+			}
+		}
+
+		if networkCfg != "default" {
+			networkCfg = "external"
+		}
+	}
 
 	for _, ns := range ps.NodesExt {
-		if ns.Services != nil {
-			port, ok := ns.Services["n1ql"]
+		if networkCfg == "default" {
+			// Get the host and port info
+			if ns.Hostname != "" {
+				hostnm = ns.Hostname
+			}
+			hostnm, _, ipv6, _ = HostNameandPort(hostnm)
+		}
 
+		// Find default ports. This is used even if network Type is external if the port mapping is absent.
+		if ns.Services != nil {
 			if strings.HasPrefix(name, "https://") {
 				isHttps = true
-				port, ok = ns.Services["n1qlSSL"]
+				port, ok = ns.Services[serviceTypeSsl]
+			} else {
+				port, ok = ns.Services[serviceType]
+			}
+		}
+
+		if networkCfg == "external" {
+			// Get the host and port info
+			if v, found := ns.AlternateNames["external"]; found {
+				if v.Hostname == "" {
+					// This is an error condition.
+					return nil, fmt.Errorf("N1QL: Hostname for external address cannot be nil")
+				}
+
+				hostnm, _, ipv6, _ = HostNameandPort(v.Hostname)
+				if v.Ports != nil {
+					// need to use external ports
+					if strings.HasPrefix(name, "https://") {
+						isHttps = true
+						port, ok = v.Ports[serviceTypeSsl]
+					} else {
+						port, ok = v.Ports[serviceType]
+					}
+				}
+
+			} else {
+				// return error as External address required to be setup.
+				return nil, fmt.Errorf("N1QL: Alternate Addresses required. ")
+			}
+		}
+
+		// we have found a port. And we have hostname as well.
+		if ok {
+			// n1ql or analytics service found
+			if isHttps {
+				hostnm = "https://" + hostnm
+			} else {
+				hostnm = "http://" + hostnm
 			}
 
-			if ok {
-				var hostname string
-				//n1ql service found
-				var ipv6 = false
-				if ns.Hostname == "" {
-					hostnm := strings.TrimSpace(name)
-					if strings.HasPrefix(hostnm, "http://") || strings.HasPrefix(hostnm, "https://") {
-						hostUrl, _ := url.Parse(name)
-						hostnm = hostUrl.Host
-					}
-
-					hostname, _, ipv6, _ = HostNameandPort(hostnm)
-
-				} else {
-					hostname, _, ipv6, _ = HostNameandPort(ns.Hostname)
-				}
-
-				if ipv6 {
-					return fmt.Sprintf("[%s]:%d", hostname, port), isHttps
-				} else {
-					return fmt.Sprintf("%s:%d", hostname, port), isHttps
-				}
-
+			if ipv6 {
+				queryAPIs = append(queryAPIs, fmt.Sprintf("[%s]:%d"+N1QL_SERVICE_ENDPOINT, hostnm, port))
+			} else {
+				queryAPIs = append(queryAPIs, fmt.Sprintf("%s:%d"+N1QL_SERVICE_ENDPOINT, hostnm, port))
 			}
 		}
 	}
-	return "", isHttps
+
+	return queryAPIs, nil
 }
 
 var cbUserAgent string = "godbc/" + util.VERSION
@@ -257,7 +335,7 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 }
 
 func OpenN1QLConnection(name string) (*n1qlConn, error) {
-	var queryAPIs []string
+	var queryAPIs []string = nil
 
 	if strings.HasPrefix(name, "https") {
 		//First check if the input string is a cluster endpoint
@@ -290,34 +368,46 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	}
 	var client couchbase.Client
 	var err error
+	var perr error = nil
+
+	// Connect to a couchbase cluster
 	if hasUsernamePassword() {
 		client, err = couchbase.ConnectWithAuthCreds(name, username, password)
 	} else {
 		client, err = couchbase.Connect(name)
 	}
-	var perr error = nil
+
 	if err != nil {
+		// Direct query entry (8093 or 8095 for example. So connect to that.)
 		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint %s. Error %v", name, err)
 		// If not cluster endpoint then check if query endpoint
 		name = strings.TrimSuffix(name, "/")
 		queryAPI := name + N1QL_SERVICE_ENDPOINT
 		queryAPIs = make([]string, 1, 1)
 		queryAPIs[0] = queryAPI
-
 	} else {
+		// Connection was possible - means this is a cluster endpoint.
+		// We need to auto detect the query / analytics nodes.
+		// Query by default. Analytics if option is set.
+
+		// Get pools/default/nodeServices
 		ps, err := client.GetPoolServices("default")
 		if err != nil {
 			return nil, fmt.Errorf("N1QL: Failed to get NodeServices list. Error %v", err)
 		}
 
-		n1qlEndPoint, isHttps := discoverN1QLService(name, ps)
-		if n1qlEndPoint == "" {
-			return nil, fmt.Errorf("N1QL: No query service found on this cluster")
-		}
-
-		queryAPIs, err = getQueryApi(n1qlEndPoint, isHttps)
+		queryAPIs, err = discoverN1QLService(name, ps, isAnalytics, networkCfg)
 		if err != nil {
 			return nil, err
+		}
+
+		sType := "N1QL"
+		if isAnalytics {
+			sType = "Analytics"
+		}
+
+		if len(queryAPIs) <= 0 {
+			return nil, fmt.Errorf("N1QL: No " + sType + " service found on this cluster")
 		}
 	}
 
