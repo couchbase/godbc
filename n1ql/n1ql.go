@@ -151,22 +151,19 @@ var HTTPClient = &http.Client{Transport: HTTPTransport}
 func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics bool, networkType string) ([]string, error) {
 	var hostnm string
 	var port int
-	var ipv6, ok bool
+	var ipv6, ok, external bool
 	var hostUrl *url.URL
 
-	isHttps := false
+	prefixUrl := "http://"
 	serviceType := "n1ql"
-	serviceTypeSsl := "n1qlSSL"
+	if isAnalytics {
+		serviceType = "cbas"
+	}
 
 	// Since analytics doesnt have a rest endpoint that lists the cluster nodes
 	// We need to populate the list of analytics APIs here itself
 	// We might as well do the same for query. This makes getQueryApi() redundant.
 	queryAPIs := []string{}
-
-	if isAnalytics {
-		serviceType = "cbas"
-		serviceTypeSsl = "cbasSSL"
-	}
 
 	// If the network type isn't provided, then we need to detect whether to use default address or alternate address
 	// by comparing the input hostname with the hostname's under services.
@@ -174,76 +171,54 @@ func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics boo
 	// move on, throwing an error if that doesnt work.
 	hostnm = strings.TrimSpace(name)
 	if strings.HasPrefix(hostnm, "http://") || strings.HasPrefix(hostnm, "https://") {
+		if strings.HasPrefix(hostnm, "https://") {
+			prefixUrl = "https://"
+			serviceType += "SSL"
+		}
 		hostUrl, _ = url.Parse(name)
 		hostnm = hostUrl.Host
 	}
-
-	if networkCfg == "auto" {
+	if networkCfg == "external" {
+		external = true
+	} else if networkCfg == "auto" {
 		for _, ns := range ps.NodesExt {
-			if strings.Compare(ns.Hostname, hostUrl.Hostname()) == 0 {
-				networkCfg = "default"
-				break
+			if v, found := ns.AlternateNames["external"]; found {
+				if strings.Compare(v.Hostname, hostUrl.Hostname()) == 0 {
+					external = true
+					break
+				}
 			}
-		}
-
-		if networkCfg != "default" {
-			networkCfg = "external"
 		}
 	}
 
 	for _, ns := range ps.NodesExt {
-		if networkCfg == "default" {
-			// Get the host and port info
+		if ns.Services == nil {
+			continue
+		}
+
+		port, ok = ns.Services[serviceType]
+
+		if !external {
 			if ns.Hostname != "" {
 				hostnm = ns.Hostname
 			}
-			hostnm, _, ipv6, _ = HostNameandPort(hostnm)
-		}
-
-		// Find default ports. This is used even if network Type is external if the port mapping is absent.
-		if ns.Services != nil {
-			if strings.HasPrefix(name, "https://") {
-				isHttps = true
-				port, ok = ns.Services[serviceTypeSsl]
-			} else {
-				port, ok = ns.Services[serviceType]
+		} else {
+			v, found := ns.AlternateNames["external"]
+			if !found || v.Hostname == "" {
+				continue
 			}
-		}
 
-		if networkCfg == "external" {
-			// Get the host and port info
-			if v, found := ns.AlternateNames["external"]; found {
-				if v.Hostname == "" {
-					// This is an error condition.
-					return nil, fmt.Errorf("N1QL: Hostname for external address cannot be nil")
-				}
-
-				hostnm, _, ipv6, _ = HostNameandPort(v.Hostname)
-				if v.Ports != nil {
-					// need to use external ports
-					if strings.HasPrefix(name, "https://") {
-						isHttps = true
-						port, ok = v.Ports[serviceTypeSsl]
-					} else {
-						port, ok = v.Ports[serviceType]
-					}
-				}
-
-			} else {
-				// return error as External address required to be setup.
-				return nil, fmt.Errorf("N1QL: Alternate Addresses required. ")
+			hostnm = v.Hostname
+			if v.Ports != nil {
+				port, ok = v.Ports[serviceType]
 			}
-		}
 
+		}
+		hostnm, _, ipv6, _ = HostNameandPort(hostnm)
 		// we have found a port. And we have hostname as well.
 		if ok {
 			// n1ql or analytics service found
-			if isHttps {
-				hostnm = "https://" + hostnm
-			} else {
-				hostnm = "http://" + hostnm
-			}
-
+			hostnm = prefixUrl + hostnm
 			if ipv6 {
 				queryAPIs = append(queryAPIs, fmt.Sprintf("[%s]:%d"+N1QL_SERVICE_ENDPOINT, hostnm, port))
 			} else {
@@ -251,7 +226,6 @@ func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics boo
 			}
 		}
 	}
-
 	return queryAPIs, nil
 }
 
