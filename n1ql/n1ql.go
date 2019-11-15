@@ -218,11 +218,10 @@ func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics boo
 		// we have found a port. And we have hostname as well.
 		if ok {
 			// n1ql or analytics service found
-			hostnm = prefixUrl + hostnm
 			if ipv6 {
-				queryAPIs = append(queryAPIs, fmt.Sprintf("[%s]:%d"+N1QL_SERVICE_ENDPOINT, hostnm, port))
+				queryAPIs = append(queryAPIs, fmt.Sprintf("%s[%s]:%d"+N1QL_SERVICE_ENDPOINT, prefixUrl, hostnm, port))
 			} else {
-				queryAPIs = append(queryAPIs, fmt.Sprintf("%s:%d"+N1QL_SERVICE_ENDPOINT, hostnm, port))
+				queryAPIs = append(queryAPIs, fmt.Sprintf("%s%s:%d"+N1QL_SERVICE_ENDPOINT, prefixUrl, hostnm, port))
 			}
 		}
 	}
