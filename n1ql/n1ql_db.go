@@ -47,7 +47,22 @@ type n1qlDB struct {
 var errorNoConnection = errors.New("N1QL connection is already closed.")
 
 func (db *n1qlDB) Begin() (godbc.Tx, error) {
-	return nil, errors.New("Transactions are not supported.")
+	if db.conn == nil || !db.conn.TxService() {
+		return nil, errorNoConnection
+	}
+	return db, nil
+}
+
+func (db *n1qlDB) Commit() error {
+	return errors.New("Transactions are not supported.")
+}
+
+func (db *n1qlDB) Rollback() error {
+	return errors.New("Transactions are not supported.")
+}
+
+func (db *n1qlDB) Stmt(stmt godbc.Stmt) godbc.Stmt {
+	return stmt
 }
 
 func (db *n1qlDB) Close() error {

@@ -96,7 +96,7 @@ func (stmt *n1qlStmt) prepareRequest(args []interface{}) (*url.Values, error) {
 		}
 	}
 
-	setQueryParams(&postData)
+	setQueryParams(&postData, nil)
 
 	return &postData, nil
 }

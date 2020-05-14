@@ -138,6 +138,8 @@ func SetRootFile(cert string) {
 type n1qlConn struct {
 	clusterAddr string
 	queryAPIs   []string
+	txid        string
+	txService   string
 	client      *http.Client
 	lock        sync.RWMutex
 }
@@ -391,7 +393,8 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 
 	conn := &n1qlConn{client: HTTPClient, queryAPIs: queryAPIs}
 
-	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPIs[0], nil)
+	txParams := map[string]string{"txid": "", "tximplicit": ""}
+	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPIs[0], nil, txParams)
 	if err != nil {
 		return nil, err
 	}
@@ -461,23 +464,32 @@ func stripurl(inputstring string) string {
 // do client request with retry
 func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (*http.Response, error) {
 
+	stmtType := txStatementType(query)
 	ok := false
 	for !ok {
 
 		var request *http.Request
 		var err error
+		var selectedNode, numNodes int
+		var queryAPI string
+		var txParams map[string]string
 
 		// select query API
-		rand.Seed(time.Now().Unix())
-		numNodes := len(conn.queryAPIs)
+		if conn.txid != "" && query != N1QL_DEFAULT_STATEMENT {
+			txParams = map[string]string{"txid": conn.txid, "tximplicit": ""}
+			queryAPI = conn.txService
+		} else {
+			rand.Seed(time.Now().Unix())
+			numNodes = len(conn.queryAPIs)
 
-		selectedNode := rand.Intn(numNodes)
-		conn.lock.RLock()
-		queryAPI := conn.queryAPIs[selectedNode]
-		conn.lock.RUnlock()
+			selectedNode = rand.Intn(numNodes)
+			conn.lock.RLock()
+			queryAPI = conn.queryAPIs[selectedNode]
+			conn.lock.RUnlock()
+		}
 
 		if query != "" {
-			request, err = prepareRequest(query, queryAPI, nil)
+			request, err = prepareRequest(query, queryAPI, nil, txParams)
 			if err != nil {
 				return nil, err
 			}
@@ -497,7 +509,8 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 		resp, err := conn.client.Do(request)
 		if err != nil {
 			// if this is the last node return with error
-			if numNodes == 1 {
+			if conn.txService != "" || numNodes == 1 {
+				conn.SetTxValues("", "")
 				break
 			}
 			// remove the node that failed from the list of query nodes
@@ -506,11 +519,31 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 			conn.lock.Unlock()
 			continue
 		} else {
+			if stmtType == TX_START {
+				txid := getTxid(resp)
+				if txid != "" {
+					conn.SetTxValues(txid, queryAPI)
+				}
+			} else if stmtType == TX_COMMIT || stmtType == TX_ROLLBACK {
+				conn.SetTxValues("", "")
+			}
 			return resp, nil
+
 		}
 	}
 
 	return nil, fmt.Errorf("N1QL: Query nodes not responding")
+}
+
+func (conn *n1qlConn) SetTxValues(txid, txService string) {
+	conn.lock.Lock()
+	defer conn.lock.Unlock()
+	conn.txid = txid
+	conn.txService = txService
+}
+
+func (conn *n1qlConn) TxService() bool {
+	return conn.txService != ""
 }
 
 func serializeErrors(errors interface{}) string {
@@ -886,7 +919,7 @@ func preparePositionalArgs(query string, argCount int, args []interface{}) (stri
 
 // prepare a http request for the query
 //
-func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Request, error) {
+func prepareRequest(query string, queryAPI string, args []interface{}, txParams map[string]string) (*http.Request, error) {
 
 	postData := url.Values{}
 	postData.Set("statement", query)
@@ -898,7 +931,7 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 		}
 	}
 
-	setQueryParams(&postData)
+	setQueryParams(&postData, txParams)
 
 	request, err := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
 	if err != nil {
@@ -916,10 +949,20 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 //
 // Set query params
 
-func setQueryParams(v *url.Values) {
+func setQueryParams(v *url.Values, txParms map[string]string) {
 
 	for key, value := range QueryParams {
-		v.Set(key, value)
+		if _, ok := txParms[key]; !ok {
+			v.Set(key, value)
+		}
+	}
+	for key, value := range txParms {
+		if value != "" {
+			v.Set(key, value)
+		} else {
+			v.Del(key)
+		}
+
 	}
 }
 
@@ -988,4 +1031,61 @@ func IsIPv6(str string) (bool, error) {
 	}
 	// IPv4
 	return false, nil
+}
+
+const (
+	TX_NONE = iota
+	TX_START
+	TX_COMMIT
+	TX_ROLLBACK
+)
+
+func txStatementType(query string) int {
+	q := strings.TrimSpace(query)
+	if len(q) > 32 {
+		q = q[0:32]
+	}
+	q = strings.ToLower(q)
+	qf := strings.Fields(q)
+	if len(qf) > 0 {
+		switch strings.TrimRight(qf[0], ";") {
+		case "start", "begin":
+			if len(qf) > 1 {
+				return TX_START
+			}
+		case "commit":
+			return TX_COMMIT
+		case "rollback":
+			if len(qf) < 3 {
+				return TX_ROLLBACK
+			}
+		}
+	}
+	return TX_NONE
+}
+
+func getTxid(resp *http.Response) (txid string) {
+	if resp.StatusCode != 200 {
+		return
+	}
+
+	var resultMap map[string]interface{}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close() //  must close
+	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+
+	if err = json.Unmarshal(body, &resultMap); err != nil {
+		return
+	}
+
+	if resultMap["status"].(string) != "success" {
+		return
+	}
+
+	results := resultMap["results"].([]interface{})
+	if len(results) > 0 {
+		txid = results[0].(map[string]interface{})["txid"].(string)
+	}
+	return
 }
