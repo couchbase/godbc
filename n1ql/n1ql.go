@@ -310,6 +310,10 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	var queryAPIs []string = nil
 
+	if name == "" {
+		return nil, fmt.Errorf(" N1QL: Invalid query service endpoint.")
+	}
+
 	if strings.HasPrefix(name, "https") {
 		//First check if the input string is a cluster endpoint
 		couchbase.SetSkipVerify(skipVerify)
