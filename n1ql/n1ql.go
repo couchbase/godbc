@@ -345,44 +345,17 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	}
 	var client couchbase.Client
 	var err error
-	var fname *url.URL
 	var perr error = nil
 
-	fname, err = url.Parse(name)
-	if err != nil {
-		return nil, fmt.Errorf(" N1QL: Invalid input url.")
-	}
-	_, addr, err := net.LookupSRV(fname.Scheme, "tcp", fname.Host)
-	if err == nil {
-		portV := fname.Port()
-		scheme := fname.Scheme
-
-		if fname.Scheme == "couchbases" {
-			if fname.Port() == "" {
-				portV = "18091"
-			}
-			scheme = "https"
-		}
-
-		if fname.Scheme == "couchbase" {
-			if fname.Port() == "" {
-				portV = "8091"
-			}
-			scheme = "http"
-		}
-
-		name = scheme + "://" + addr[0].Target + ":" + portV
+	// Connect to a couchbase cluster
+	if hasUsernamePassword() {
+		client, err = couchbase.ConnectWithAuthCreds(name, username, password)
 	} else {
-		// Connect to a couchbase cluster
-		if hasUsernamePassword() {
-			client, err = couchbase.ConnectWithAuthCreds(name, username, password)
-		} else {
-			client, err = couchbase.Connect(name)
-		}
+		client, err = couchbase.Connect(name)
 	}
 
 	if err != nil {
-		// Direct query entry (8093 or 8095 for example. So connect to that.) or DNS SRV
+		// Direct query entry (8093 or 8095 for example. So connect to that.)
 		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint %s. Error %v", name, err)
 
 		// If not cluster endpoint then check if query endpoint
