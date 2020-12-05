@@ -58,6 +58,7 @@ var (
 
 // Rest API query parameters
 var QueryParams map[string]string
+var TxTimeout string
 
 // Username and password. Used for querying the cluster endpoint,
 // which may require authorization.
@@ -89,16 +90,24 @@ func SetQueryParams(key string, value string) error {
 
 	if key == "" {
 		return fmt.Errorf("N1QL: Key not specified")
+	} else if key == "txtimeout" {
+		TxTimeout = value
 	}
 
 	QueryParams[key] = value
 	return nil
 }
 
+func SetTxTimeout(value string) {
+	TxTimeout = value
+}
+
 func UnsetQueryParams(key string) error {
 
 	if key == "" {
 		return fmt.Errorf("N1QL: Key not specified")
+	} else if key == "txtimeout" {
+		TxTimeout = ""
 	}
 
 	delete(QueryParams, key)
@@ -479,6 +488,9 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 			txParams = map[string]string{"txid": conn.txid, "tximplicit": ""}
 			queryAPI = conn.txService
 		} else {
+			if stmtType == TX_START && TxTimeout != "" {
+				txParams = map[string]string{"txtimeout": TxTimeout}
+			}
 			rand.Seed(time.Now().Unix())
 			numNodes = len(conn.queryAPIs)
 
