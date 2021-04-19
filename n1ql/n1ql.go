@@ -34,7 +34,7 @@ import (
 
 // Common error codes
 var (
-	ErrNotSupported   = fmt.Errorf("N1QL:Not supported")
+	ErrNotSupported   = fmt.Errorf("N1QL: Not supported")
 	ErrNotImplemented = fmt.Errorf("N1QL: Not implemented")
 	ErrUnknownCommand = fmt.Errorf("N1QL: Unknown Command")
 	ErrInternalError  = fmt.Errorf("N1QL: Internal Error")
@@ -264,23 +264,23 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 
 	resp, err := HTTPClient.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("%v", err)
+		return nil, fmt.Errorf("HTTP client request error: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("%s", bod)
+		return nil, fmt.Errorf("HTTP client response error: %s", bod)
 	}
 
 	var nodesInfo []interface{}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to read response body from server. Error %v", err)
+		return nil, fmt.Errorf("N1QL: Failed to read response body from server: %v", err)
 	}
 
 	if err := json.Unmarshal(body, &nodesInfo); err != nil {
-		return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
+		return nil, fmt.Errorf("N1QL: Failed to parse response: %v", err)
 	}
 
 	for _, queryNode := range nodesInfo {
@@ -344,19 +344,17 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 		}
 	}
 	var client couchbase.Client
-	var err error
-	var perr error = nil
+	var err, perr error
 
 	// Connect to a couchbase cluster
 	if hasUsernamePassword() {
-		client, err = couchbase.ConnectWithAuthCreds(name, username, password)
+		client, perr = couchbase.ConnectWithAuthCreds(name, username, password)
 	} else {
-		client, err = couchbase.Connect(name)
+		client, perr = couchbase.Connect(name)
 	}
 
-	if err != nil {
+	if perr != nil {
 		// Direct query entry (8093 or 8095 for example. So connect to that.)
-		perr = fmt.Errorf("N1QL: Unable to connect to cluster endpoint %s. Error %v", name, err)
 		// If not cluster endpoint then check if query endpoint
 		name = strings.TrimSuffix(name, "/")
 		queryAPI := name + N1QL_SERVICE_ENDPOINT
@@ -370,7 +368,7 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 		// Get pools/default/nodeServices
 		ps, err := client.GetPoolServices("default")
 		if err != nil {
-			return nil, fmt.Errorf("N1QL: Failed to get NodeServices list. Error %v", err)
+			return nil, fmt.Errorf("N1QL: Failed to get NodeServices list: %v", err)
 		}
 
 		queryAPIs, err = discoverN1QLService(name, ps, isAnalytics, networkCfg)
@@ -397,17 +395,15 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 
 	resp, err := conn.client.Do(request)
 	if err != nil {
-		final_error := fmt.Errorf("N1QL: Connection failed %v", stripurl(err.Error())).Error()
 		if perr != nil {
-			final_error = final_error + "\n " + stripurl(perr.Error())
+			return nil, fmt.Errorf("N1QL: Unable to connect to endpoint %s: %v", name, stripurl(perr.Error()))
 		}
-		return nil, fmt.Errorf("%v", final_error)
+		return nil, fmt.Errorf("N1QL: Unable to connect to endpoint %s: %v", name, stripurl(err.Error()))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("N1QL: Connection failure %s", bod)
+		return nil, fmt.Errorf("N1QL: Unable to connect to N1QL endpoint: %s \nHTTP ERR: %v", queryAPIs[0], resp.Status)
 	}
 
 	return conn, nil
@@ -901,7 +897,7 @@ func prepareRequest(query string, queryAPI string, args []interface{}) (*http.Re
 
 	request, err := http.NewRequest("POST", queryAPI, bytes.NewBufferString(postData.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error creating HTTP request: %v", err)
 	}
 	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	setCBUserAgent(request)
