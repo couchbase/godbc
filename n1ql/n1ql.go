@@ -508,24 +508,30 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 	return nil, fmt.Errorf("N1QL: Query nodes not responding")
 }
 
-func serializeErrors(errors interface{}) string {
 
+func serializeErrors(errors interface{}, onlymsg bool) string {
 	var errString string
 	switch errors := errors.(type) {
 	case []interface{}:
 		for _, e := range errors {
 			switch e := e.(type) {
 			case map[string]interface{}:
+				tmpErr := ""
 				code, _ := e["code"]
 				msg, _ := e["msg"]
 
-				if code != 0 && msg != "" {
-					if errString != "" {
-						errString = fmt.Sprintf("%v Code : %v Message : %v", errString, code, msg)
-					} else {
-						errString = fmt.Sprintf("Code : %v Message : %v", code, msg)
-					}
+				if onlymsg && msg != "" {
+					tmpErr = fmt.Sprintf("Message : %v", msg)
+				} else if code != 0 && msg != "" {
+					tmpErr = fmt.Sprintf("Code : %v Message : %v", code, msg)
 				}
+
+				if errString != "" {
+					errString = fmt.Sprintf("%v ", errString) + tmpErr
+				} else {
+					errString = tmpErr
+				}
+
 			}
 		}
 	}
@@ -569,7 +575,7 @@ func (conn *n1qlConn) Prepare(query string) (*n1qlStmt, error) {
 	if ok && errors != nil {
 		var errs []interface{}
 		_ = json.Unmarshal(*errors, &errs)
-		return nil, fmt.Errorf("N1QL: Error preparing statement %v", serializeErrors(errs))
+		return nil, fmt.Errorf("N1QL: Error preparing statement %v", serializeErrors(errs, false))
 	}
 
 	for name, results := range resultMap {
@@ -804,7 +810,7 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (godb
 		case "errors":
 			var errs []interface{}
 			_ = json.Unmarshal(*results, &errs)
-			execErr = fmt.Errorf("N1QL: Error executing query %v", serializeErrors(errs))
+			execErr = fmt.Errorf("N1QL: Error executing query %v", serializeErrors(errs, false))
 		}
 	}
 
