@@ -406,6 +406,7 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	}
 
 	resp, err := conn.client.Do(request)
+
 	if err != nil {
 		if perr != nil {
 			return nil, fmt.Errorf("N1QL: Unable to connect to endpoint %s: %v", name, stripurl(perr.Error()))
@@ -416,6 +417,27 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("N1QL: Unable to connect to N1QL endpoint: %s \nHTTP ERR: %v", queryAPIs[0], resp.Status)
+	}
+	if perr != nil {
+		// Also check for the case where its auth failure but the http request to query was successful
+		var resultMap map[string]*json.RawMessage
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("N1QL: Failed to read response body from server. Error %v", err)
+		}
+
+		if err := json.Unmarshal(body, &resultMap); err != nil {
+			return nil, fmt.Errorf("N1QL: Failed to parse response. Error %v", err)
+		}
+
+		errors, ok := resultMap["errors"]
+		if ok && errors != nil {
+			var errs []interface{}
+			_ = json.Unmarshal(*errors, &errs)
+			return nil, fmt.Errorf("N1QL: Connection error. %v", serializeErrors(errs, true))
+		}
+
 	}
 
 	return conn, nil
