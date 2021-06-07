@@ -365,6 +365,9 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	}
 
 	if perr != nil {
+		if strings.Contains(perr.Error(), "Unauthorized") {
+			return nil, perr
+		}
 		// Direct query entry (8093 or 8095 for example. So connect to that.)
 		// If not cluster endpoint then check if query endpoint
 		name = strings.TrimSuffix(name, "/")
