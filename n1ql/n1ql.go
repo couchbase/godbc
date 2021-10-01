@@ -27,8 +27,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/godbc"
+	"github.com/couchbase/query/primitives/couchbase"
 	"github.com/couchbase/query/util"
 )
 
@@ -69,10 +69,13 @@ var username, password string
 var skipVerify = true
 var certFile = ""
 var keyFile = ""
-var rootFile = ""
+var caFile = ""
+var privateKeyPassphrase = []byte{}
 
 var isAnalytics = false
 var networkCfg = "default"
+
+const schemestring = "://"
 
 func init() {
 	QueryParams = make(map[string]string)
@@ -135,12 +138,16 @@ func SetCertFile(cert string) {
 	certFile = cert
 }
 
-func SetKeyFile(cert string) {
-	keyFile = cert
+func SetKeyFile(key string) {
+	keyFile = key
 }
 
-func SetRootFile(cert string) {
-	rootFile = cert
+func SetCaFile(cacert string) {
+	caFile = cacert
+}
+
+func SetPrivateKeyPassphrase(passphrase []byte) {
+	privateKeyPassphrase = passphrase
 }
 
 // implements driver.Conn interface
@@ -335,17 +342,21 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 			if certFile != "" && keyFile != "" {
 				couchbase.SetCertFile(certFile)
 				couchbase.SetKeyFile(keyFile)
+				couchbase.SetPrivateKeyPassphrase(privateKeyPassphrase)
 			} else {
 				//error need to pass both certfile and keyfile
 				return nil, fmt.Errorf("N1QL: Need to pass both certfile and keyfile")
 			}
 
-			if rootFile != "" {
-				couchbase.SetRootFile(rootFile)
+			if caFile != "" {
+				couchbase.SetCaFile(caFile)
 			}
 
 			// For 18093 connections
-			cfg, err := couchbase.ClientConfigForX509(certFile, keyFile, rootFile)
+			cfg, err := couchbase.ClientConfigForX509(caFile,
+				certFile,
+				keyFile,
+				privateKeyPassphrase)
 			if err != nil {
 				return nil, err
 			}
@@ -359,10 +370,13 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 
 	// Connect to a couchbase cluster
 	if hasUsernamePassword() {
-		client, perr = couchbase.ConnectWithAuthCreds(name, username, password)
-	} else {
-		client, perr = couchbase.Connect(name)
+		// append these values to the url
+		newUrl, er := url.Parse(name)
+		if er == nil {
+			name = newUrl.Scheme + schemestring + username + ":" + password + "@" + newUrl.Host
+		}
 	}
+	client, perr = couchbase.Connect(name)
 
 	if perr != nil {
 		if strings.Contains(perr.Error(), "Unauthorized") {
