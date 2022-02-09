@@ -27,8 +27,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/godbc"
+	"github.com/couchbase/query/primitives/couchbase"
+	"github.com/couchbase/query/util"
 )
 
 // Common error codes
@@ -47,7 +48,6 @@ var (
 	N1QL_POOL_SIZE         = 2 ^ 10 // 1 MB
 	N1QL_DEFAULT_STATEMENT = "SELECT RAW 1;"
 	LOCALHOST              = N1QL_DEFAULT_HOST
-	VERSION                = "2.0"
 )
 
 // flags
@@ -246,7 +246,7 @@ func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics boo
 	return queryAPIs, nil
 }
 
-var cbUserAgent string = "godbc/" + VERSION
+var cbUserAgent string = "godbc/" + util.VERSION
 
 func SetCBUserAgentHeader(v string) {
 	cbUserAgent = v
@@ -349,7 +349,7 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 			}
 
 			if caFile != "" {
-				couchbase.SetRootFile(caFile)
+				couchbase.SetCaFile(caFile)
 			}
 
 			// For 18093 connections
