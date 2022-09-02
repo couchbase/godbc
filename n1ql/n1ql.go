@@ -373,7 +373,8 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 		// append these values to the url
 		newUrl, er := url.Parse(name)
 		if er == nil {
-			name = newUrl.Scheme + schemestring + username + ":" + password + "@" + newUrl.Host
+			userInfo := url.UserPassword(username, password)
+			name = newUrl.Scheme + schemestring + userInfo.String() + "@" + newUrl.Host
 		}
 	}
 	client, perr = couchbase.Connect(name)
