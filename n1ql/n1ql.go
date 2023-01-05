@@ -325,7 +325,7 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 	return queryAPIs, nil
 }
 
-func OpenN1QLConnection(name string) (*n1qlConn, error) {
+func OpenN1QLConnection(name string, userAgent string) (*n1qlConn, error) {
 	var queryAPIs []string = nil
 
 	if name == "" {
@@ -377,7 +377,7 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 			name = newUrl.Scheme + schemestring + userInfo.String() + "@" + newUrl.Host
 		}
 	}
-	client, perr = couchbase.Connect(name)
+	client, perr = couchbase.Connect(name, userAgent)
 
 	if perr != nil {
 		if strings.Contains(perr.Error(), "Unauthorized") {
@@ -421,6 +421,9 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 	request, err := prepareRequest(N1QL_DEFAULT_STATEMENT, queryAPIs[0], nil, txParams)
 	if err != nil {
 		return nil, err
+	}
+	if userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
 	}
 
 	resp, err := conn.client.Do(request)

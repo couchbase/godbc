@@ -10,7 +10,7 @@ import (
 
 // Illustrates the use of the raw result interface of the N1QL module.
 func main() {
-	db, err := n1ql.OpenExtended("http://localhost:8093")
+	db, err := n1ql.OpenExtended("http://localhost:8093","example")
 	if err != nil {
 		fmt.Println("Failed to open.", err.Error())
 		return
