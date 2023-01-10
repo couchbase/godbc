@@ -25,7 +25,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/couchbase/godbc"
 	"github.com/couchbase/query/primitives/couchbase"
@@ -74,8 +73,6 @@ var privateKeyPassphrase = []byte{}
 
 var isAnalytics = false
 var networkCfg = "default"
-
-const schemestring = "://"
 
 func init() {
 	QueryParams = make(map[string]string)
@@ -373,8 +370,8 @@ func OpenN1QLConnection(name string, userAgent string) (*n1qlConn, error) {
 		// append these values to the url
 		newUrl, er := url.Parse(name)
 		if er == nil {
-			userInfo := url.UserPassword(username, password)
-			name = newUrl.Scheme + schemestring + userInfo.String() + "@" + newUrl.Host
+			newUrl.User = url.UserPassword(username, password)
+			name = newUrl.String()
 		}
 	}
 	client, perr = couchbase.Connect(name, userAgent)
@@ -430,14 +427,14 @@ func OpenN1QLConnection(name string, userAgent string) (*n1qlConn, error) {
 
 	if err != nil {
 		if perr != nil {
-			return nil, fmt.Errorf("N1QL: Unable to connect to endpoint %s: %v", name, stripurl(perr.Error()))
+			err = perr
 		}
-		return nil, fmt.Errorf("N1QL: Unable to connect to endpoint %s: %v", name, stripurl(err.Error()))
+		return nil, fmt.Errorf("N1QL: Unable to connect to endpoint %s: %v", stripurl(name), stripurl(err.Error()))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("N1QL: Unable to connect to N1QL endpoint: %s \nHTTP ERR: %v", queryAPIs[0], resp.Status)
+		return nil, fmt.Errorf("N1QL: Unable to connect to N1QL endpoint %s: %v", queryAPIs[0], resp.Status)
 	}
 	if perr != nil {
 		// Also check for the case where its auth failure but the http request to query was successful
@@ -465,47 +462,28 @@ func OpenN1QLConnection(name string, userAgent string) (*n1qlConn, error) {
 }
 
 func stripurl(inputstring string) string {
-	// Detect http* within the string.
-	startindex := strings.Index(inputstring, "http")
-	endindex := strings.Index(inputstring[startindex:], " ")
-	inputurl := inputstring[startindex : startindex+endindex]
-
-	// Parse into a url and detect password
-	urlpart, err := url.Parse(inputurl)
+	start := strings.Index(inputstring, "http")
+	if start == -1 {
+		return inputstring
+	}
+	end := strings.Index(inputstring[start:], " ")
+	if end == -1 {
+		end = len(inputstring)
+	}
+	u, err := url.Parse(inputstring[start:end])
 	if err != nil {
 		return inputstring
 	}
-
-	u := urlpart.User
-	if u == nil {
-		return inputstring
+	u.User = nil
+	res := ""
+	if start > 0 {
+		res = inputstring[:start]
 	}
-
-	uname := u.Username()
-	pwd, _ := u.Password()
-
-	//Find how many symbols there are in the User string
-	num := 0
-
-	for _, letter := range fmt.Sprintf("%v", pwd) {
-		if (unicode.IsSymbol(letter) || unicode.IsPunct(letter)) && letter != '*' {
-			num = num + 1
-		}
+	res += u.String()
+	if end < len(inputstring) {
+		res += stripurl(inputstring[end:])
 	}
-
-	// detect the index on the password
-	startindex = strings.Index(inputstring, uname)
-
-	//reform the error message, with * as the password
-	inputstring = inputstring[:startindex+len(uname)+1] + "*" + inputstring[startindex+len(uname)+1+len(pwd):]
-
-	//Replace all the special characters encoding
-	for num > 0 {
-		num = num - 1
-		inputstring = stripurl(inputstring)
-	}
-
-	return inputstring
+	return res
 }
 
 // do client request with retry
