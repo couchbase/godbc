@@ -343,7 +343,7 @@ func OpenN1QLConnection(name string) (*n1qlConn, error) {
 				couchbase.SetCertFile(certFile)
 				couchbase.SetKeyFile(keyFile)
 				couchbase.SetPrivateKeyPassphrase(privateKeyPassphrase)
-			} else {
+			} else if certFile != "" || keyFile != "" {
 				//error need to pass both certfile and keyfile
 				return nil, fmt.Errorf("N1QL: Need to pass both certfile and keyfile")
 			}
