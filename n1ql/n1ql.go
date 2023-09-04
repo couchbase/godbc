@@ -283,7 +283,7 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("HTTP client response error: %s", bod)
 	}
@@ -433,7 +433,7 @@ func OpenN1QLConnection(name string, userAgent string) (*n1qlConn, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("N1QL: Unable to connect to N1QL endpoint %s: %v", queryAPIs[0], resp.Status)
 	}
 	if perr != nil {
@@ -620,8 +620,11 @@ func (conn *n1qlConn) Prepare(query string) (*n1qlStmt, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		if len(bod) == 0 {
+			return nil, fmt.Errorf("HTTP status %v", resp.StatusCode)
+		}
 		return nil, fmt.Errorf("%s", bod)
 	}
 
@@ -703,7 +706,7 @@ func (conn *n1qlConn) performQueryRaw(query string, requestValues *url.Values) (
 		return nil, err
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return resp.Body, fmt.Errorf("Request failed with error code %d.", resp.StatusCode)
 	}
 	return resp.Body, nil
@@ -724,8 +727,11 @@ func (conn *n1qlConn) performQuery(query string, requestValues *url.Values) (god
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		if len(bod) == 0 {
+			return nil, fmt.Errorf("HTTP status %v", resp.StatusCode)
+		}
 		return nil, fmt.Errorf("%s", bod)
 	}
 
@@ -830,7 +836,7 @@ func (conn *n1qlConn) performExecRaw(query string, requestValues *url.Values) (i
 		return nil, err
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return resp.Body, fmt.Errorf("Request failed with error code %d.", resp.StatusCode)
 	}
 	return resp.Body, nil
@@ -844,8 +850,11 @@ func (conn *n1qlConn) performExec(query string, requestValues *url.Values) (godb
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		bod, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 512))
+		if len(bod) == 0 {
+			return nil, fmt.Errorf("HTTP status %v", resp.StatusCode)
+		}
 		return nil, fmt.Errorf("%s", bod)
 	}
 
@@ -924,7 +933,6 @@ func prepareQuery(query string) (string, int) {
 	return re.ReplaceAllStringFunc(query, f), count
 }
 
-//
 // Replace the conditional pqrams in the query and return the list of left-over args
 func preparePositionalArgs(query string, argCount int, args []interface{}) (string, []interface{}) {
 	subList := make([]string, 0)
@@ -952,7 +960,6 @@ func preparePositionalArgs(query string, argCount int, args []interface{}) (stri
 }
 
 // prepare a http request for the query
-//
 func prepareRequest(query string, queryAPI string, args []interface{}, txParams map[string]string) (*http.Request, error) {
 
 	postData := url.Values{}
@@ -1099,7 +1106,7 @@ func txStatementType(query string) int {
 }
 
 func getTxid(resp *http.Response) (txid string) {
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return
 	}
 
