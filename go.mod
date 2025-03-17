@@ -4,6 +4,12 @@ go 1.23.0
 
 toolchain go1.23.4
 
+replace github.com/couchbase/cbft => ../../../../../../cbft
+
+replace github.com/couchbase/cbgt => ../../../../../../cbgt
+
+replace github.com/couchbase/hebrew => ../../../../../../hebrew
+
 replace github.com/couchbase/eventing => ../eventing
 
 replace github.com/couchbase/eventing-ee => ../eventing-ee
