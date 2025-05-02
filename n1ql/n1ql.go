@@ -14,6 +14,7 @@ import (
 	"crypto/tls"
 	"database/sql/driver"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -168,6 +169,8 @@ type n1qlConn struct {
 	queryAPIs   []string
 	txid        string
 	txService   string
+	chatId      string
+	chatService string
 	client      *http.Client
 	lock        sync.RWMutex
 }
@@ -580,7 +583,7 @@ func stripurl(inputstring string) string {
 // do client request with retry
 func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (*http.Response, error) {
 
-	stmtType := txStatementType(query)
+	stmtType := txOrAiStatementType(query)
 	ok := false
 	for !ok {
 
@@ -588,27 +591,49 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 		var err error
 		var selectedNode, numNodes int
 		var queryAPI string
-		var txParams map[string]string
+		var txOrAiParams map[string]string
 
 		// select query API
-		if conn.txid != "" && query != N1QL_DEFAULT_STATEMENT {
-			txParams = map[string]string{"txid": conn.txid, "tximplicit": ""}
-			queryAPI = conn.txService
-		} else {
-			if stmtType == TX_START && TxTimeout != "" {
-				txParams = map[string]string{"txtimeout": TxTimeout}
-			}
-			rand.Seed(time.Now().Unix())
-			numNodes = len(conn.queryAPIs)
+		rand.Seed(time.Now().Unix())
+		numNodes = len(conn.queryAPIs)
 
-			selectedNode = rand.Intn(numNodes)
-			conn.lock.RLock()
-			queryAPI = conn.queryAPIs[selectedNode]
-			conn.lock.RUnlock()
+		selectedNode = rand.Intn(numNodes)
+		conn.lock.RLock()
+		queryAPI = conn.queryAPIs[selectedNode]
+		conn.lock.RUnlock()
+
+		if stmtType == TX_START && TxTimeout != "" {
+			txOrAiParams = map[string]string{"txtimeout": TxTimeout}
+		}
+
+		if conn.txid != "" && conn.chatId == "" && query != N1QL_DEFAULT_STATEMENT {
+			if txOrAiParams == nil {
+				txOrAiParams = map[string]string{"txid": conn.txid, "tximplicit": ""}
+			} else {
+				txOrAiParams["txid"] = conn.txid
+				txOrAiParams["tximplicit"] = ""
+			}
+			queryAPI = conn.txService
+		} else if conn.chatId != "" && conn.txid == "" && query != N1QL_DEFAULT_STATEMENT {
+			if txOrAiParams == nil {
+				txOrAiParams = map[string]string{"natural_chatid": conn.chatId}
+			} else {
+				txOrAiParams["natural_chatid"] = conn.chatId
+			}
+			queryAPI = conn.chatService
+		} else if conn.txService != "" && conn.chatService != "" && query != N1QL_DEFAULT_STATEMENT {
+			if txOrAiParams == nil {
+				txOrAiParams = map[string]string{"txid": conn.txid, "tximplicit": "", "natural_chatid": conn.chatId}
+			} else {
+				txOrAiParams["txid"] = conn.txid
+				txOrAiParams["tximplicit"] = ""
+				txOrAiParams["natural_chatid"] = conn.chatId
+			}
+			queryAPI = conn.txService
 		}
 
 		if query != "" {
-			request, err = prepareRequest(query, queryAPI, nil, txParams)
+			request, err = prepareRequest(query, queryAPI, nil, txOrAiParams)
 			if err != nil {
 				return nil, err
 			}
@@ -634,8 +659,9 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 		resp, err := conn.client.Do(request)
 		if err != nil {
 			// if this is the last node return with error
-			if conn.txService != "" || numNodes == 1 {
+			if conn.txService != "" || conn.chatService != "" || numNodes == 1 {
 				conn.SetTxValues("", "")
+				conn.SetChatValues("", "")
 				break
 			}
 			// remove the node that failed from the list of query nodes
@@ -651,9 +677,15 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 				}
 			} else if stmtType == TX_COMMIT || stmtType == TX_ROLLBACK {
 				conn.SetTxValues("", "")
+			} else if stmtType == AI_START {
+				chatId := getChatId(resp)
+				if chatId != "" {
+					conn.SetChatValues(chatId, queryAPI)
+				}
+			} else if stmtType == AI_END {
+				conn.SetChatValues("", "")
 			}
 			return resp, nil
-
 		}
 	}
 
@@ -664,7 +696,22 @@ func (conn *n1qlConn) SetTxValues(txid, txService string) {
 	conn.lock.Lock()
 	defer conn.lock.Unlock()
 	conn.txid = txid
-	conn.txService = txService
+	if txid != "" && conn.chatService != "" {
+		conn.txService = conn.chatService
+	} else {
+		conn.txService = txService
+	}
+}
+
+func (conn *n1qlConn) SetChatValues(chatId, chatService string) {
+	conn.lock.Lock()
+	defer conn.lock.Unlock()
+	conn.chatId = chatId
+	if chatId != "" && conn.txService != "" {
+		conn.chatService = conn.txService
+	} else {
+		conn.chatService = chatService
+	}
 }
 
 func (conn *n1qlConn) TxService() bool {
@@ -1180,9 +1227,12 @@ const (
 	TX_START
 	TX_COMMIT
 	TX_ROLLBACK
+
+	AI_START
+	AI_END
 )
 
-func txStatementType(query string) int {
+func txOrAiStatementType(query string) int {
 	q := strings.TrimSpace(query)
 	if len(q) > 32 {
 		q = q[0:32]
@@ -1191,15 +1241,26 @@ func txStatementType(query string) int {
 	qf := strings.Fields(q)
 	if len(qf) > 0 {
 		switch strings.TrimRight(qf[0], ";") {
-		case "start", "begin":
+		case "start":
+			return TX_START
+		case "begin":
 			if len(qf) > 1 {
-				return TX_START
+				if strings.TrimRight(qf[1], ";") == "chat" {
+					return AI_START
+				}
 			}
+			return TX_START
 		case "commit":
 			return TX_COMMIT
 		case "rollback":
 			if len(qf) < 3 {
 				return TX_ROLLBACK
+			}
+		case "end":
+			if len(qf) > 1 {
+				if strings.TrimRight(qf[1], ";") == "chat" {
+					return AI_END
+				}
 			}
 		}
 	}
@@ -1211,23 +1272,130 @@ func getTxid(resp *http.Response) (txid string) {
 		return
 	}
 
-	var resultMap map[string]interface{}
+	contentTypeHeader := resp.Header.Get("Content-Type")
+	contentType := strings.Split(contentTypeHeader, ";")[0]
+	switch contentType {
+	case "application/xml":
+		body, _ := ioutil.ReadAll(resp.Body)
 
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close() //  must close
-	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+		bodyBuffer := bytes.NewBuffer(body)
+		decoder := xml.NewDecoder(bodyBuffer)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewBuffer(body))
 
-	if err = json.Unmarshal(body, &resultMap); err != nil {
+		for {
+			t, err := decoder.Token()
+			if err != nil || err == io.EOF {
+				break
+			}
+
+			if start, ok := t.(xml.StartElement); ok {
+				attr := start.Attr
+				if len(attr) > 0 {
+					xmlattr := attr[0]
+					if xmlattr.Value == "txid" {
+						for {
+							t, err = decoder.Token()
+							if err != nil || err == io.EOF {
+								break
+							}
+							if stringField, ok := t.(xml.StartElement); ok {
+								if stringField.Name.Local == "string" {
+									t, err = decoder.Token()
+									if err != nil || err == io.EOF {
+										break
+									}
+
+									if txidtoken, ok := t.(xml.CharData); ok {
+										txid = string([]byte(txidtoken.Copy()))
+										return
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return
+	case "application/json":
+		var resultMap map[string]interface{}
+
+		body, _ := ioutil.ReadAll(resp.Body)
+		resp.Body.Close() //  must close
+		resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+
+		if err := json.Unmarshal(body, &resultMap); err != nil {
+			return
+		}
+
+		if resultMap["status"].(string) != "success" {
+			return
+		}
+
+		results := resultMap["results"].([]interface{})
+		if len(results) > 0 {
+			txid = results[0].(map[string]interface{})["txid"].(string)
+		}
 		return
 	}
 
-	if resultMap["status"].(string) != "success" {
+	return
+}
+
+func getChatId(resp *http.Response) (chatId string) {
+	if resp.StatusCode != http.StatusOK {
 		return
 	}
 
-	results := resultMap["results"].([]interface{})
-	if len(results) > 0 {
-		txid = results[0].(map[string]interface{})["txid"].(string)
+	contentTypeHeader := resp.Header.Get("Content-Type")
+	contentType := strings.Split(contentTypeHeader, ";")[0]
+	switch contentType {
+	case "application/json":
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+
+		var resultMap map[string]interface{}
+
+		if err := json.Unmarshal(body, &resultMap); err != nil {
+			return
+		}
+
+		if resultMap["status"].(string) != "success" {
+			return
+		}
+
+		chatId = resultMap["chatId"].(string)
+		return
+	case "application/xml":
+		body, _ := ioutil.ReadAll(resp.Body)
+
+		bodyBuffer := bytes.NewBuffer(body)
+		decoder := xml.NewDecoder(bodyBuffer)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewBuffer(body))
+
+		for {
+			t, err := decoder.Token()
+			if err != nil || err == io.EOF {
+				break
+			}
+
+			if start, ok := t.(xml.StartElement); ok && start.Name.Local == "chatId" {
+				t, err := decoder.Token()
+				if err != nil || err == io.EOF {
+					return
+				}
+				if chatIdToken, ok := t.(xml.CharData); ok {
+					chatId = string(chatIdToken)
+					return
+				}
+			}
+		}
+		return
 	}
 	return
 }
