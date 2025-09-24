@@ -63,6 +63,21 @@ var TxTimeout string
 // which may require authorization.
 var username, password string
 
+// Extra headers to send with every HTTP request
+var extraHeaders = http.Header{}
+
+// AddHeader adds a header; may be specified multiple times to add multiple values.
+func AddExtraHeader(key, value string) {
+	if extraHeaders == nil {
+		extraHeaders = http.Header{}
+	}
+	extraHeaders.Add(key, value)
+}
+
+func hasExtraHeaders() bool {
+	return len(extraHeaders) > 0
+}
+
 // Used to decide whether to skip verification of certificates when
 // connecting to an ssl port.
 var skipVerify = true
@@ -240,6 +255,7 @@ func discoverN1QLService(name string, ps couchbase.PoolServices, isAnalytics boo
 			}
 		}
 	}
+
 	return queryAPIs, nil
 }
 
@@ -253,8 +269,17 @@ func setCBUserAgent(request *http.Request) {
 	request.Header.Add("CB-User-Agent", cbUserAgent)
 }
 
-func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
+// user-provided headers, overriding any defaults.
+func setExtraHeaders(req *http.Request) {
+	for k, vs := range extraHeaders {
+		req.Header.Del(k)
+		for _, v := range vs {
+			req.Header.Set(k, v)
+		}
+	}
+}
 
+func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 	queryAdmin := n1qlEndPoint + "/admin/clusters/default/nodes"
 
 	if isHttps {
@@ -264,11 +289,18 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 	}
 
 	request, _ := http.NewRequest("GET", queryAdmin, nil)
-	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	if hasExtraHeaders() {
+		setExtraHeaders(request)
+	}
+
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	setCBUserAgent(request)
+
 	if hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
 	}
+
 	queryAPIs := make([]string, 0)
 
 	hostname, _, ipv6, err := HostNameandPort(n1qlEndPoint)
@@ -317,6 +349,53 @@ func getQueryApi(n1qlEndPoint string, isHttps bool) ([]string, error) {
 
 	if len(queryAPIs) == 0 {
 		return nil, fmt.Errorf("Query endpoints not found")
+	}
+
+	return queryAPIs, nil
+}
+
+func getQueryAPIUsingJWT(name string, userAgent string) (queryAPIs []string, err error) {
+	requestUrl, err := url.JoinPath(name, "pools", "default", "nodeServices")
+	if err != nil {
+		return nil, err
+	}
+
+	req, _ := http.NewRequest("GET", requestUrl, nil)
+	setExtraHeaders(req)
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
+
+	resp, err := HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("HTTP error %v getting %q: %s",
+			resp.Status, requestUrl, body)
+	}
+
+	var ps couchbase.PoolServices
+	d := json.NewDecoder(resp.Body)
+	if err = d.Decode(&ps); err != nil {
+		return nil, fmt.Errorf("json decode err: %#v, for requestUrl: %s",
+			err, requestUrl)
+	}
+
+	queryAPIs, err = discoverN1QLService(name, ps, isAnalytics, networkCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(queryAPIs) <= 0 {
+		sType := "N1QL"
+		if isAnalytics {
+			sType = "Analytics"
+		}
+		return nil, fmt.Errorf("N1QL: No " + sType + " service found on this cluster")
 	}
 
 	return queryAPIs, nil
@@ -374,18 +453,30 @@ func OpenN1QLConnection(name string, userAgent string) (*n1qlConn, error) {
 			name = newUrl.String()
 		}
 	}
+
 	client, perr = couchbase.Connect(name, userAgent)
 
 	if perr != nil {
 		if strings.Contains(perr.Error(), "Unauthorized") {
-			return nil, perr
+			// check if JWT token is present instead of username and password
+			if hasExtraHeaders() {
+				queryAPIs, err = getQueryAPIUsingJWT(name, userAgent)
+				if err != nil {
+					return nil, perr
+				}
+			} else {
+				return nil, perr
+			}
 		}
+
 		// Direct query entry (8093 or 8095 for example. So connect to that.)
 		// If not cluster endpoint then check if query endpoint
-		name = strings.TrimSuffix(name, "/")
-		queryAPI := name + N1QL_SERVICE_ENDPOINT
-		queryAPIs = make([]string, 1, 1)
-		queryAPIs[0] = queryAPI
+		if queryAPIs == nil || len(queryAPIs) == 0 {
+			name = strings.TrimSuffix(name, "/")
+			queryAPI := name + N1QL_SERVICE_ENDPOINT
+			queryAPIs = make([]string, 1, 1)
+			queryAPIs[0] = queryAPI
+		}
 	} else {
 		// Connection was possible - means this is a cluster endpoint.
 		// We need to auto detect the query / analytics nodes.
@@ -527,11 +618,17 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 			} else {
 				request, _ = http.NewRequest("POST", queryAPI, nil)
 			}
-			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-			setCBUserAgent(request)
-			if hasUsernamePassword() {
-				request.SetBasicAuth(username, password)
-			}
+
+		}
+		if hasExtraHeaders() {
+			setExtraHeaders(request)
+		}
+
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		setCBUserAgent(request)
+
+		if hasUsernamePassword() {
+			request.SetBasicAuth(username, password)
 		}
 
 		resp, err := conn.client.Do(request)
@@ -961,7 +1058,6 @@ func preparePositionalArgs(query string, argCount int, args []interface{}) (stri
 
 // prepare a http request for the query
 func prepareRequest(query string, queryAPI string, args []interface{}, txParams map[string]string) (*http.Request, error) {
-
 	postData := url.Values{}
 	postData.Set("statement", query)
 
@@ -978,8 +1074,13 @@ func prepareRequest(query string, queryAPI string, args []interface{}, txParams 
 	if err != nil {
 		return nil, fmt.Errorf("Error creating HTTP request: %v", err)
 	}
-	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	if hasExtraHeaders() {
+		setExtraHeaders(request)
+	}
+
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	setCBUserAgent(request)
+
 	if hasUsernamePassword() {
 		request.SetBasicAuth(username, password)
 	}
