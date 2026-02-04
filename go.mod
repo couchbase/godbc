@@ -45,6 +45,7 @@ require (
 	github.com/couchbase/clog v0.1.0 // indirect
 	github.com/couchbase/go-couchbase v0.1.1 // indirect
 	github.com/couchbase/go_json v0.0.0-20220330123059-4473a21887c8 // indirect
+	github.com/couchbase/gocbcrypto v0.0.0-00010101000000-000000000000 // indirect
 	github.com/couchbase/gomemcached v0.3.3 // indirect
 	github.com/couchbase/goutils v0.1.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
