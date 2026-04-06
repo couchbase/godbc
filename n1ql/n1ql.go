@@ -1262,6 +1262,18 @@ func txOrAiStatementType(query string) int {
 					return AI_END
 				}
 			}
+		case "resume":
+			if len(qf) > 1 {
+				if strings.TrimRight(qf[1], ";") == "chat" {
+					return AI_START
+				}
+			}
+		case "pause":
+			if len(qf) > 1 {
+				if strings.TrimRight(qf[1], ";") == "chat" {
+					return AI_END
+				}
+			}
 		}
 	}
 	return TX_NONE
