@@ -670,20 +670,22 @@ func (conn *n1qlConn) doClientRequest(query string, requestValues *url.Values) (
 			conn.lock.Unlock()
 			continue
 		} else {
-			if stmtType == TX_START {
-				txid := getTxid(resp)
-				if txid != "" {
-					conn.SetTxValues(txid, queryAPI)
+			if resp.StatusCode == http.StatusOK {
+				if stmtType == TX_START {
+					txid := getTxid(resp)
+					if txid != "" {
+						conn.SetTxValues(txid, queryAPI)
+					}
+				} else if stmtType == TX_COMMIT || stmtType == TX_ROLLBACK {
+					conn.SetTxValues("", "")
+				} else if stmtType == AI_START {
+					chatId := getChatId(resp)
+					if chatId != "" {
+						conn.SetChatValues(chatId, queryAPI)
+					}
+				} else if stmtType == AI_END {
+					conn.SetChatValues("", "")
 				}
-			} else if stmtType == TX_COMMIT || stmtType == TX_ROLLBACK {
-				conn.SetTxValues("", "")
-			} else if stmtType == AI_START {
-				chatId := getChatId(resp)
-				if chatId != "" {
-					conn.SetChatValues(chatId, queryAPI)
-				}
-			} else if stmtType == AI_END {
-				conn.SetChatValues("", "")
 			}
 			return resp, nil
 		}
@@ -1279,10 +1281,8 @@ func txOrAiStatementType(query string) int {
 	return TX_NONE
 }
 
+// Caller must ensure resp has status 200.
 func getTxid(resp *http.Response) (txid string) {
-	if resp.StatusCode != http.StatusOK {
-		return
-	}
 
 	contentTypeHeader := resp.Header.Get("Content-Type")
 	contentType := strings.Split(contentTypeHeader, ";")[0]
@@ -1356,10 +1356,8 @@ func getTxid(resp *http.Response) (txid string) {
 	return
 }
 
+// Caller must ensure resp has status 200.
 func getChatId(resp *http.Response) (chatId string) {
-	if resp.StatusCode != http.StatusOK {
-		return
-	}
 
 	contentTypeHeader := resp.Header.Get("Content-Type")
 	contentType := strings.Split(contentTypeHeader, ";")[0]
