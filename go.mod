@@ -41,7 +41,7 @@ replace github.com/couchbase/gocbcrypto => ../gocbcrypto
 require github.com/couchbase/query v0.0.0-00010101000000-000000000000
 
 require (
-	github.com/couchbase/cbauth v0.1.20 // indirect
+	github.com/couchbase/cbauth v0.1.23 // indirect
 	github.com/couchbase/clog v0.1.0 // indirect
 	github.com/couchbase/go-couchbase v0.1.1 // indirect
 	github.com/couchbase/go_json v0.0.0-20250803152502-4641f4ef8578 // indirect
@@ -52,5 +52,5 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 )
